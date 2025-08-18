@@ -24,12 +24,33 @@ A comprehensive backend API system that processes PDF manuals using MinerU, stor
 
 2. **Install Dependencies**
    ```bash
+   # For production (recommended)
    pip install -r requirements.txt
+   
+   # For minimal installation (basic functionality only)
+   pip install -r requirements-minimal.txt
+   
+   # For development (includes testing and linting tools)
+   pip install -r requirements-dev.txt
    ```
 
 3. **Run the Application**
    ```bash
+   # Option 1: Simple startup script (recommended)
+   chmod +x start.sh
+   ./start.sh
+   
+   # Option 2: Python startup script
+   python3 run.py
+   
+   # Option 3: Direct Python execution
    python main.py
+   
+   # Option 4: Using uvicorn directly
+   uvicorn main:app --host 0.0.0.0 --port 8000
+   
+   # Option 5: For development with auto-reload
+   uvicorn main:app --host 0.0.0.0 --port 8000 --reload
    ```
 
 4. **Access API Documentation**

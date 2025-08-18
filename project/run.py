@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 """
-Startup script for PDF Intelligence Platform
-This script can be used by PM2 to start the FastAPI application
+Simple startup script for PDF Intelligence Platform
+Run this script to start the FastAPI application
 """
 
 import uvicorn
 import os
 import sys
-
-# Add the current directory to Python path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 if __name__ == "__main__":
     # Configuration
@@ -18,9 +15,12 @@ if __name__ == "__main__":
     reload = os.getenv("RELOAD", "false").lower() == "true"
     log_level = os.getenv("LOG_LEVEL", "info")
     
-    print(f"Starting PDF Intelligence Platform on {host}:{port}")
-    print(f"Reload mode: {reload}")
-    print(f"Log level: {log_level}")
+    print("🚀 Starting PDF Intelligence Platform...")
+    print(f"📍 Host: {host}")
+    print(f"🔌 Port: {port}")
+    print(f"🔄 Reload: {reload}")
+    print(f"📝 Log Level: {log_level}")
+    print("=" * 50)
     
     # Start the application
     uvicorn.run(

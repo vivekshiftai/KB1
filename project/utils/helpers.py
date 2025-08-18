@@ -96,4 +96,5 @@ def validate_pdf_file(file_path: str) -> bool:
         logger.error(f"PDF validation error for {file_path}: {str(e)}")
         return False
 
-logger = setup_logging()
+# Initialize logger at module level
+logger = logging.getLogger(__name__)
