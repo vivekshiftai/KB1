@@ -8,7 +8,7 @@ import uvicorn
 from config import settings
 from utils.helpers import setup_logging
 from endpoints import upload, query, pdfs, rules, maintenance, safety
-from models.schemas import PDFUploadResponse
+
 
 # Setup logging
 logger = setup_logging(settings.log_level)
