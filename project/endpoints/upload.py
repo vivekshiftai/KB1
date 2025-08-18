@@ -18,16 +18,21 @@ async def upload_pdf(file: UploadFile = File(...)):
     """Upload and process PDF file"""
     start_time = time.time()
     
+    logger.info(f"=== Starting PDF Upload Process ===")
+    logger.info(f"File: {file.filename}")
+    logger.info(f"Size: {file.size} bytes")
+    logger.info(f"Content-Type: {file.content_type}")
+    
     # Validate file
     if not file.filename or not file.filename.endswith('.pdf'):
+        logger.error(f"Invalid file type: {file.filename}")
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
     
     if file.size and file.size > settings.max_file_size:
+        logger.error(f"File too large: {file.size} bytes (max: {settings.max_file_size})")
         raise HTTPException(status_code=400, detail=f"File too large. Maximum size: {settings.max_file_size} bytes")
     
-    logger.info(f"Processing PDF upload: {file.filename}")
-    logger.info(f"File size: {file.size} bytes")
-    logger.info(f"Content type: {file.content_type}")
+    logger.info(f"File validation passed")
     
     # Sanitize filename to handle special characters
     safe_filename = sanitize_filename(file.filename) + ".pdf"
@@ -54,12 +59,14 @@ async def upload_pdf(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Failed to save uploaded file: {str(e)}")
     
     try:
+        logger.info(f"=== Initializing Services ===")
         # Initialize services
         pdf_processor = PDFProcessor()
         vector_db = VectorDatabase()
         
         # Generate collection name from original filename
         collection_name = sanitize_filename(file.filename)
+        logger.info(f"Collection name: {collection_name}")
         
         # Check if collection already exists
         if vector_db.collection_exists(collection_name):
@@ -77,26 +84,35 @@ async def upload_pdf(file: UploadFile = File(...)):
         # Prepare output directory
         output_dir = Path(settings.output_dir) / Path(file.filename).stem
         output_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Output directory: {output_dir}")
         
         # Process PDF
-        logger.info("Starting PDF processing with MinerU...")
+        logger.info(f"=== Starting PDF Processing ===")
+        logger.info(f"Using MinerU for PDF extraction...")
         chunks = await pdf_processor.process_pdf(str(upload_path), str(output_dir))
         
         if not chunks:
+            logger.error("No content could be extracted from PDF")
             raise HTTPException(status_code=500, detail="No content could be extracted from PDF")
         
-        logger.info(f"Generated {len(chunks)} chunks")
+        logger.info(f"Successfully generated {len(chunks)} content chunks")
         
         # Store in vector database
-        logger.info("Storing chunks in vector database...")
+        logger.info(f"=== Storing in Vector Database ===")
+        logger.info(f"Storing {len(chunks)} chunks in collection: {collection_name}")
         chunks_stored = await vector_db.store_chunks(chunks, collection_name)
+        logger.info(f"Successfully stored {chunks_stored} chunks in vector database")
         
         # Cleanup uploaded file
         upload_path.unlink()
+        logger.info(f"Cleaned up temporary upload file")
         
         processing_time = calculate_processing_time(start_time)
         
-        logger.info(f"PDF processing completed successfully in {processing_time}")
+        logger.info(f"=== PDF Processing Complete ===")
+        logger.info(f"Total processing time: {processing_time}")
+        logger.info(f"Chunks processed: {chunks_stored}")
+        logger.info(f"Collection: {collection_name}")
         
         return PDFUploadResponse(
             success=True,

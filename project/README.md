@@ -4,14 +4,15 @@ A comprehensive backend API system that processes PDF manuals using MinerU, stor
 
 ## Features
 
-- **PDF Processing**: Upload and process PDF manuals using MinerU with local model inference
+- **PDF Processing**: Upload and process PDF manuals using MinerU with CPU-based local inference
 - **Intelligent Chunking**: Heading-based content chunking with image and table extraction
-- **Vector Storage**: ChromaDB integration with Azure Vector Search fallback
+- **Vector Storage**: ChromaDB integration with efficient similarity search
 - **Smart Querying**: GPT-4 powered intelligent responses with context awareness
 - **Rules Generation**: Automated IoT monitoring rule creation from technical documentation
 - **Maintenance Scheduling**: Extract and structure maintenance tasks from manuals
 - **Safety Information**: Comprehensive safety guideline generation
-- **Production Ready**: Comprehensive error handling, logging, and scalable architecture
+- **Production Ready**: Comprehensive error handling, detailed logging, and scalable architecture
+- **VM Optimized**: CPU-only processing optimized for virtual machine environments
 
 ## Quick Start
 
@@ -37,14 +38,14 @@ A comprehensive backend API system that processes PDF manuals using MinerU, stor
 ## API Endpoints
 
 ### Core Operations
-- `POST /upload/pdf` - Upload and process PDF files
-- `POST /query` - Query PDF content with intelligent responses
-- `GET /pdfs` - List all processed PDFs
+- `POST /upload/pdf` - Upload and process PDF files with MinerU extraction
+- `POST /query` - Query PDF content with intelligent responses and context
+- `GET /pdfs` - List all processed PDFs with pagination
 
 ### Generation Endpoints
-- `POST /generate-rules/{pdf_name}` - Generate IoT monitoring rules
-- `POST /generate-maintenance/{pdf_name}` - Extract maintenance schedules
-- `POST /generate-safety/{pdf_name}` - Generate safety information
+- `POST /generate-rules/{pdf_name}` - Generate IoT monitoring rules from PDF content
+- `POST /generate-maintenance/{pdf_name}` - Extract maintenance schedules and tasks
+- `POST /generate-safety/{pdf_name}` - Generate safety information and procedures
 
 ### Utility
 - `GET /health` - Health check endpoint
@@ -52,15 +53,34 @@ A comprehensive backend API system that processes PDF manuals using MinerU, stor
 
 ## Environment Variables
 
-```
+```bash
+# Required
 OPENAI_API_KEY=your_openai_key_here
+
+# Optional (Azure OpenAI fallback)
 AZURE_OPENAI_ENDPOINT=your_azure_endpoint_optional
 AZURE_OPENAI_KEY=your_azure_key_optional
+
+# Database Configuration
 VECTOR_DB_TYPE=chromadb
 CHROMADB_PATH=./vector_db
+
+# File Storage
 MODELS_DIR=./pdf_extract_kit_models
 UPLOAD_DIR=./uploads
 OUTPUT_DIR=./processed
+
+# Processing Configuration
+MAX_FILE_SIZE=52428800  # 50MB in bytes
+MAX_CHUNKS_PER_BATCH=25
+EMBEDDING_MODEL=all-MiniLM-L6-v2
+
+# MinerU Configuration
+DEVICE_MODE=cpu  # cpu or cuda
+FORMULA_ENABLE=true
+TABLE_ENABLE=true
+
+# Logging
 LOG_LEVEL=INFO
 ```
 
@@ -93,11 +113,12 @@ The platform follows a modular architecture:
 - Structured data generation for rules, maintenance, and safety
 
 ### Production Features
-- Comprehensive error handling and logging
-- Request/response validation with Pydantic
+- Comprehensive error handling and detailed logging with structured output
+- Request/response validation with Pydantic schemas
 - Async/await patterns for optimal performance
 - Health checks and monitoring endpoints
 - CORS support and security considerations
+- Detailed processing logs for debugging and monitoring
 
 ## Usage Examples
 
@@ -112,12 +133,31 @@ curl -X POST "http://localhost:8000/upload/pdf" \
 ```bash
 curl -X POST "http://localhost:8000/query" \
      -H "Content-Type: application/json" \
-     -d '{"pdf_name": "manual.pdf", "query": "How to install the device?"}'
+     -d '{
+       "pdf_name": "manual.pdf", 
+       "query": "How to install the device?",
+       "top_k": 5
+     }'
+```
+
+### List PDFs
+```bash
+curl -X GET "http://localhost:8000/pdfs?page=1&limit=10"
 ```
 
 ### Generate Rules
 ```bash
 curl -X POST "http://localhost:8000/generate-rules/manual.pdf"
+```
+
+### Generate Maintenance Schedule
+```bash
+curl -X POST "http://localhost:8000/generate-maintenance/manual.pdf"
+```
+
+### Generate Safety Information
+```bash
+curl -X POST "http://localhost:8000/generate-safety/manual.pdf"
 ```
 
 ## Contributing
