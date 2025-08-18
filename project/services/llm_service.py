@@ -1,5 +1,6 @@
 import json
 import logging
+import tiktoken
 from typing import List, Dict, Any, Optional
 from openai import AsyncOpenAI
 from config import settings
@@ -11,22 +12,57 @@ class LLMService:
     def __init__(self):
         self.client = AsyncOpenAI(api_key=settings.openai_api_key)
         self.model = "gpt-4"
+        self.max_tokens = 8192
+        self.max_completion_tokens = 2000
+        self.max_context_tokens = self.max_tokens - self.max_completion_tokens
+        self.encoding = tiktoken.encoding_for_model("gpt-4")
+    
+    def count_tokens(self, text: str) -> int:
+        """Count tokens in text"""
+        return len(self.encoding.encode(text))
+    
+    def truncate_chunks_to_fit_context(self, chunks: List[Dict[str, Any]], system_prompt: str = "", user_prompt_template: str = "") -> List[Dict[str, Any]]:
+        """Truncate chunks to fit within context limit"""
+        # Calculate available tokens for chunks
+        system_tokens = self.count_tokens(system_prompt)
+        user_template_tokens = self.count_tokens(user_prompt_template)
+        reserved_tokens = system_tokens + user_template_tokens + 100  # Buffer
+        
+        available_tokens = self.max_context_tokens - reserved_tokens
+        
+        logger.info(f"Available tokens for chunks: {available_tokens}")
+        logger.info(f"System prompt tokens: {system_tokens}")
+        logger.info(f"User template tokens: {user_template_tokens}")
+        
+        selected_chunks = []
+        current_tokens = 0
+        
+        for chunk in chunks:
+            heading = chunk["metadata"].get("heading", "")
+            content = chunk["document"]
+            chunk_text = f"**{heading}**\n{content}"
+            chunk_tokens = self.count_tokens(chunk_text)
+            
+            if current_tokens + chunk_tokens <= available_tokens:
+                selected_chunks.append(chunk)
+                current_tokens += chunk_tokens
+                logger.info(f"Added chunk '{heading}' ({chunk_tokens} tokens), total: {current_tokens}")
+            else:
+                logger.info(f"Skipping chunk '{heading}' ({chunk_tokens} tokens) - would exceed limit")
+                break
+        
+        logger.info(f"Selected {len(selected_chunks)} chunks with {current_tokens} tokens")
+        return selected_chunks
     
     async def query_with_context(self, chunks: List[Dict[str, Any]], query: str) -> Dict[str, Any]:
         """Query with context chunks using GPT-4"""
         logger.info(f"Processing query with {len(chunks)} context chunks")
         
-        # Prepare context
-        context_parts = []
-        for i, chunk in enumerate(chunks):
-            heading = chunk["metadata"].get("heading", f"Section {i+1}")
-            content = chunk["document"]
-            context_parts.append(f"**{heading}**\n{content}")
+        # System prompt
+        system_prompt = "You are a technical documentation assistant. Provide accurate, detailed answers based on the provided manual sections."
         
-        context = "\n\n".join(context_parts)
-        
-        # Create prompt
-        prompt = f"""Based on the following technical manual sections, please answer the user's query. 
+        # User prompt template
+        user_prompt_template = """Based on the following technical manual sections, please answer the user's query. 
 Please identify which specific sections you used to formulate your answer.
 
 Context:
@@ -36,14 +72,36 @@ User Query: {query}
 
 Please provide a comprehensive answer and then list the specific sections/headings you referenced."""
         
+        # Truncate chunks to fit within token limit
+        selected_chunks = self.truncate_chunks_to_fit_context(chunks, system_prompt, user_prompt_template.format(query=query))
+        
+        if not selected_chunks:
+            logger.warning("No chunks could fit within token limit")
+            return {
+                "response": "I apologize, but the content is too large to process. Please try a more specific query or upload a smaller document.",
+                "chunks_used": []
+            }
+        
+        # Prepare context from selected chunks
+        context_parts = []
+        for i, chunk in enumerate(selected_chunks):
+            heading = chunk["metadata"].get("heading", f"Section {i+1}")
+            content = chunk["document"]
+            context_parts.append(f"**{heading}**\n{content}")
+        
+        context = "\n\n".join(context_parts)
+        
+        # Format the user prompt with context
+        user_prompt = user_prompt_template.format(context=context, query=query)
+        
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a technical documentation assistant. Provide accurate, detailed answers based on the provided manual sections."},
-                    {"role": "user", "content": prompt}
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=2000,
+                max_tokens=self.max_completion_tokens,
                 temperature=0.1
             )
             
@@ -69,16 +127,11 @@ Please provide a comprehensive answer and then list the specific sections/headin
         """Generate IoT monitoring rules from chunks"""
         logger.info(f"Generating rules from {len(chunks)} chunks")
         
-        # Prepare context
-        context_parts = []
-        for chunk in chunks:
-            heading = chunk["metadata"].get("heading", "")
-            content = chunk["document"]
-            context_parts.append(f"**{heading}**\n{content}")
+        # System prompt
+        system_prompt = "You are an IoT systems engineer specializing in industrial monitoring rules. Generate practical, actionable monitoring rules based on technical documentation."
         
-        context = "\n\n".join(context_parts)
-        
-        prompt = f"""Analyze these technical manual sections and generate IoT monitoring rules. 
+        # User prompt template
+        user_prompt_template = """Analyze these technical manual sections and generate IoT monitoring rules. 
 Focus on operational parameters, thresholds, and automated responses. 
 Format as structured rules with conditions and actions.
 Avoid safety procedures - focus on operational monitoring.
@@ -104,14 +157,33 @@ Focus on:
 - Maintenance triggers
 - System status monitoring"""
         
+        # Truncate chunks to fit within token limit
+        selected_chunks = self.truncate_chunks_to_fit_context(chunks, system_prompt, user_prompt_template)
+        
+        if not selected_chunks:
+            logger.warning("No chunks could fit within token limit")
+            return []
+        
+        # Prepare context from selected chunks
+        context_parts = []
+        for chunk in selected_chunks:
+            heading = chunk["metadata"].get("heading", "")
+            content = chunk["document"]
+            context_parts.append(f"**{heading}**\n{content}")
+        
+        context = "\n\n".join(context_parts)
+        
+        # Format the user prompt with context
+        user_prompt = user_prompt_template.format(context=context)
+        
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are an IoT systems engineer specializing in industrial monitoring rules. Generate practical, actionable monitoring rules based on technical documentation."},
-                    {"role": "user", "content": prompt}
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=2000,
+                max_tokens=self.max_completion_tokens,
                 temperature=0.2
             )
             
@@ -143,48 +215,62 @@ Focus on:
         """Generate maintenance schedule from chunks"""
         logger.info(f"Generating maintenance schedule from {len(chunks)} chunks")
         
-        # Prepare context
-        context_parts = []
-        for chunk in chunks:
-            heading = chunk["metadata"].get("heading", "")
-            content = chunk["document"]
-            context_parts.append(f"**{heading}**\n{content}")
+        # System prompt
+        system_prompt = "You are a maintenance engineer specializing in industrial equipment maintenance schedules. Extract and structure maintenance tasks from technical documentation."
         
-        context = "\n\n".join(context_parts)
-        
-        prompt = f"""Extract maintenance schedules from these manual sections. 
+        # User prompt template
+        user_prompt_template = """Extract maintenance schedules from these manual sections. 
 Identify daily, weekly, monthly, and periodic maintenance tasks.
 Return structured data with task descriptions and frequencies.
 
 Context:
 {context}
 
-Please generate maintenance tasks in JSON format:
+Please generate maintenance tasks in JSON format with the following structure:
 [
   {{
-    "task": "Check oil levels",
+    "task": "Check oil level",
     "frequency": "daily",
     "category": "lubrication",
-    "description": "Visual inspection of oil levels in main reservoir"
+    "description": "Verify oil level is within acceptable range"
   }}
 ]
 
 Focus on:
-- Daily inspections
-- Weekly cleaning tasks
-- Monthly servicing
-- Periodic overhauls
+- Preventive maintenance tasks
+- Inspection procedures
+- Cleaning and lubrication
 - Calibration requirements
-- Filter replacements"""
+- Safety checks
+- Performance monitoring"""
+        
+        # Truncate chunks to fit within token limit
+        selected_chunks = self.truncate_chunks_to_fit_context(chunks, system_prompt, user_prompt_template)
+        
+        if not selected_chunks:
+            logger.warning("No chunks could fit within token limit")
+            return []
+        
+        # Prepare context from selected chunks
+        context_parts = []
+        for chunk in selected_chunks:
+            heading = chunk["metadata"].get("heading", "")
+            content = chunk["document"]
+            context_parts.append(f"**{heading}**\n{content}")
+        
+        context = "\n\n".join(context_parts)
+        
+        # Format the user prompt with context
+        user_prompt = user_prompt_template.format(context=context)
         
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a maintenance engineer specializing in industrial equipment. Extract comprehensive maintenance schedules from technical documentation."},
-                    {"role": "user", "content": prompt}
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=2000,
+                max_tokens=self.max_completion_tokens,
                 temperature=0.1
             )
             
@@ -214,22 +300,17 @@ Focus on:
         """Generate safety information from chunks"""
         logger.info(f"Generating safety information from {len(chunks)} chunks")
         
-        # Prepare context
-        context_parts = []
-        for chunk in chunks:
-            heading = chunk["metadata"].get("heading", "")
-            content = chunk["document"]
-            context_parts.append(f"**{heading}**\n{content}")
+        # System prompt
+        system_prompt = "You are a safety engineer specializing in industrial equipment safety. Extract comprehensive safety information from technical documentation."
         
-        context = "\n\n".join(context_parts)
-        
-        prompt = f"""Extract safety procedures and warnings from these manual sections.
+        # User prompt template
+        user_prompt_template = """Extract safety procedures and warnings from these manual sections.
 Generate comprehensive safety guidelines categorized by type.
 
 Context:
 {context}
 
-Please generate safety information in JSON format:
+Please generate safety information in JSON format with the following structure:
 [
   {{
     "type": "warning",
@@ -247,14 +328,33 @@ Focus on:
 - Hazard identification
 - Risk mitigation"""
         
+        # Truncate chunks to fit within token limit
+        selected_chunks = self.truncate_chunks_to_fit_context(chunks, system_prompt, user_prompt_template)
+        
+        if not selected_chunks:
+            logger.warning("No chunks could fit within token limit")
+            return []
+        
+        # Prepare context from selected chunks
+        context_parts = []
+        for chunk in selected_chunks:
+            heading = chunk["metadata"].get("heading", "")
+            content = chunk["document"]
+            context_parts.append(f"**{heading}**\n{content}")
+        
+        context = "\n\n".join(context_parts)
+        
+        # Format the user prompt with context
+        user_prompt = user_prompt_template.format(context=context)
+        
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a safety engineer specializing in industrial equipment safety. Extract comprehensive safety information from technical documentation."},
-                    {"role": "user", "content": prompt}
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=2000,
+                max_tokens=self.max_completion_tokens,
                 temperature=0.1
             )
             
