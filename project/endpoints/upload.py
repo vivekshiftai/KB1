@@ -1,3 +1,10 @@
+"""
+PDF Intelligence Platform - Upload Endpoint
+Handles PDF file upload and processing
+
+Version: 0.1
+"""
+
 import os
 import time
 import logging
@@ -10,10 +17,10 @@ from utils.helpers import sanitize_filename, calculate_processing_time, validate
 from models.schemas import PDFUploadResponse
 from config import settings
 
-router = APIRouter(prefix="/upload", tags=["upload"])
+router = APIRouter(tags=["upload"])
 logger = logging.getLogger(__name__)
 
-@router.post("/pdf", response_model=PDFUploadResponse)
+@router.post("/upload-pdf", response_model=PDFUploadResponse)
 async def upload_pdf(file: UploadFile = File(...)):
     """Upload and process PDF file"""
     start_time = time.time()

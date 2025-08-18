@@ -1,3 +1,10 @@
+"""
+LLM Service
+Handles interactions with OpenAI GPT-4 for intelligent responses
+
+Version: 0.1
+"""
+
 import json
 import logging
 import tiktoken

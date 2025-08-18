@@ -1,3 +1,10 @@
+"""
+PDF Intelligence Platform - Configuration Management
+Centralized configuration settings for the application
+
+Version: 0.1
+"""
+
 import os
 from pathlib import Path
 from pydantic_settings import BaseSettings
@@ -25,9 +32,13 @@ class Settings(BaseSettings):
     embedding_model: str = "all-MiniLM-L6-v2"
     
     # MinerU Configuration
-    device_mode: str = "cpu"  # or "cuda"
+    device_mode: str = "cpu"  # Force CPU mode
     formula_enable: bool = True
     table_enable: bool = True
+    
+    # CPU Optimization Settings
+    force_cpu: bool = True  # Force all operations to use CPU
+    torch_device: str = "cpu"  # PyTorch device setting
     
     class Config:
         env_file = ".env"
@@ -35,6 +46,11 @@ class Settings(BaseSettings):
 
 # Global settings instance
 settings = Settings()
+
+# Force CPU usage for all operations
+os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Disable CUDA
+os.environ["TOKENIZERS_PARALLELISM"] = "false"  # Disable tokenizer parallelism
+os.environ["OMP_NUM_THREADS"] = "4"  # Limit OpenMP threads for CPU optimization
 
 # Ensure directories exist
 Path(settings.upload_dir).mkdir(exist_ok=True)

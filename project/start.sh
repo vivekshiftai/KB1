@@ -33,10 +33,17 @@ if [ ! -f ".env" ]; then
     echo "   Example: echo 'OPENAI_API_KEY=your_key_here' > .env"
 fi
 
+# Set CPU environment variables
+export CUDA_VISIBLE_DEVICES=""
+export TORCH_DEVICE="cpu"
+export TOKENIZERS_PARALLELISM="false"
+export OMP_NUM_THREADS="4"
+
 # Start the application
 echo "🎯 Starting application..."
 echo "   API Docs: http://localhost:8000/docs"
 echo "   Health Check: http://localhost:8000/health"
+echo "   ✅ CPU mode enforced - All operations will use CPU"
 echo "   Press Ctrl+C to stop"
 echo ""
 

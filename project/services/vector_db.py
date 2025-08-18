@@ -1,3 +1,10 @@
+"""
+Vector Database Service
+Handles vector database operations with ChromaDB
+
+Version: 0.1
+"""
+
 import os
 import json
 import logging
@@ -17,7 +24,9 @@ _EMBEDDING_MODEL_SINGLETON: Optional[SentenceTransformer] = None
 def _get_embedding_model(model_name: str) -> SentenceTransformer:
     global _EMBEDDING_MODEL_SINGLETON
     if _EMBEDDING_MODEL_SINGLETON is None:
-        _EMBEDDING_MODEL_SINGLETON = SentenceTransformer(model_name)
+        # Force CPU usage for sentence transformers
+        _EMBEDDING_MODEL_SINGLETON = SentenceTransformer(model_name, device='cpu')
+        logger.info(f"Initialized SentenceTransformer model '{model_name}' on CPU")
     return _EMBEDDING_MODEL_SINGLETON
 
 

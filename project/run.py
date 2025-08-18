@@ -2,11 +2,18 @@
 """
 Simple startup script for PDF Intelligence Platform
 Run this script to start the FastAPI application
+
+Version: 0.1
 """
 
 import uvicorn
 import os
 import sys
+
+# Force CPU mode before importing any ML libraries
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+os.environ["TORCH_DEVICE"] = "cpu"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 if __name__ == "__main__":
     # Configuration
@@ -20,6 +27,7 @@ if __name__ == "__main__":
     print(f"🔌 Port: {port}")
     print(f"🔄 Reload: {reload}")
     print(f"📝 Log Level: {log_level}")
+    print("✅ CPU mode enforced - All operations will use CPU")
     print("=" * 50)
     
     # Start the application

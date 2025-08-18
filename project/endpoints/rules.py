@@ -1,3 +1,10 @@
+"""
+PDF Intelligence Platform - Rules Generation Endpoint
+Handles generation of IoT monitoring rules from PDF content
+
+Version: 0.1
+"""
+
 import time
 import logging
 from fastapi import APIRouter, HTTPException, Path

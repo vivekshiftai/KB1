@@ -1,3 +1,10 @@
+"""
+PDF Processor Service
+Handles PDF processing using MinerU and PyMuPDF
+
+Version: 0.1
+"""
+
 import os
 import shutil
 import json
@@ -102,12 +109,17 @@ class PDFProcessor:
                     env = os.environ.copy()
                     env["PYTHONUNBUFFERED"] = "1"
                     env["PYTHONIOENCODING"] = "utf-8"
-                    # Constrain resource usage to reduce VM instability
-                    env.setdefault("TOKENIZERS_PARALLELISM", "false")
-                    env.setdefault("OMP_NUM_THREADS", "2")
-                    # Force CPU when configured to avoid GPU driver issues on VMs
-                    if str(settings.device_mode).lower() == "cpu":
-                        env["CUDA_VISIBLE_DEVICES"] = ""
+                    
+                    # Force CPU usage for all operations
+                    env["CUDA_VISIBLE_DEVICES"] = ""  # Disable CUDA
+                    env["TOKENIZERS_PARALLELISM"] = "false"  # Disable tokenizer parallelism
+                    env["OMP_NUM_THREADS"] = "4"  # Limit OpenMP threads for CPU optimization
+                    env["TORCH_DEVICE"] = "cpu"  # Force PyTorch to use CPU
+                    env["TRANSFORMERS_OFFLINE"] = "0"  # Allow online model downloads
+                    
+                    # Additional CPU optimizations
+                    env["MKL_NUM_THREADS"] = "4"  # Limit MKL threads
+                    env["NUMEXPR_NUM_THREADS"] = "4"  # Limit NumExpr threads
 
                     # Prefer line-buffered stdio on Unix if available; try to preserve TTY-like behavior
                     effective_cmd = cmd

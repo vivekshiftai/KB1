@@ -1,3 +1,10 @@
+"""
+PDF Intelligence Platform - Safety Information Generation Endpoint
+Handles generation of safety information from PDF content
+
+Version: 0.1
+"""
+
 import time
 import logging
 from fastapi import APIRouter, HTTPException, Path

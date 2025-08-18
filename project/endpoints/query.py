@@ -1,3 +1,10 @@
+"""
+PDF Intelligence Platform - Query Endpoint
+Handles intelligent querying of PDF content
+
+Version: 0.1
+"""
+
 import time
 import logging
 from fastapi import APIRouter, HTTPException

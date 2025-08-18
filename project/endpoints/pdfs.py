@@ -1,3 +1,10 @@
+"""
+PDF Intelligence Platform - PDFs Endpoint
+Handles listing and management of processed PDFs
+
+Version: 0.1
+"""
+
 import logging
 from fastapi import APIRouter, HTTPException, Query
 from services.vector_db import VectorDatabase

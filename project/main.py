@@ -1,3 +1,10 @@
+"""
+PDF Intelligence Platform - Main Application
+FastAPI application for PDF processing and intelligent querying
+
+Version: 0.1
+"""
+
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
@@ -7,6 +14,7 @@ import uvicorn
 
 from config import settings
 from utils.helpers import setup_logging
+from utils.cpu_optimizer import optimize_for_cpu
 from endpoints import upload, query, pdfs, rules, maintenance, safety
 
 
@@ -17,10 +25,15 @@ logger = setup_logging(settings.log_level)
 async def lifespan(app: FastAPI):
     """Application lifespan management"""
     logger.info("Starting PDF Intelligence Platform...")
+    
+    # Force CPU mode for all operations
+    optimize_for_cpu()
+    
     logger.info(f"Vector DB Type: {settings.vector_db_type}")
     logger.info(f"Models Directory: {settings.models_dir}")
     logger.info(f"Upload Directory: {settings.upload_dir}")
     logger.info(f"Output Directory: {settings.output_dir}")
+    logger.info("✅ CPU mode enforced - All operations will use CPU")
     
     yield
     
@@ -30,7 +43,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="PDF Intelligence Platform",
     description="A comprehensive backend API system that processes PDF manuals, stores them in vector databases, and provides intelligent querying capabilities for IoT device documentation, rules generation, maintenance schedules, and safety information.",
-    version="1.0.0",
+    version="0.1",
     lifespan=lifespan
 )
 
@@ -56,10 +69,10 @@ async def root():
     """Root endpoint"""
     return {
         "service": "PDF Intelligence Platform",
-        "version": "1.0.0",
+        "version": "0.1",
         "status": "operational",
         "endpoints": {
-            "upload": "/upload/pdf",
+            "upload": "/upload-pdf",
             "query": "/query",
             "list_pdfs": "/pdfs",
             "generate_rules": "/generate-rules/{pdf_name}",
@@ -76,7 +89,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "PDF Intelligence Platform",
-        "version": "1.0.0",
+        "version": "0.1",
         "components": {
             "upload": "healthy",
             "query": "healthy",

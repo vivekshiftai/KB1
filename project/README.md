@@ -59,7 +59,7 @@ A comprehensive backend API system that processes PDF manuals using MinerU, stor
 ## API Endpoints
 
 ### Core Operations
-- `POST /upload/pdf` - Upload and process PDF files with MinerU extraction
+- `POST /upload-pdf` - Upload and process PDF files with MinerU extraction
 - `POST /query` - Query PDF content with intelligent responses and context
 - `GET /pdfs` - List all processed PDFs with pagination
 
@@ -145,7 +145,7 @@ The platform follows a modular architecture:
 
 ### Upload PDF
 ```bash
-curl -X POST "http://localhost:8000/upload/pdf" \
+curl -X POST "http://localhost:8000/upload-pdf" \
      -H "Content-Type: multipart/form-data" \
      -F "file=@manual.pdf"
 ```

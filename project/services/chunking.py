@@ -1,3 +1,10 @@
+"""
+Chunking Service
+Handles content chunking for vector storage
+
+Version: 0.1
+"""
+
 import re
 import json
 import logging

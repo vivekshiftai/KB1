@@ -1,3 +1,9 @@
+"""
+Pydantic schemas for request/response models
+
+Version: 0.1
+"""
+
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime

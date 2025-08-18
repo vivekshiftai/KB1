@@ -107,7 +107,7 @@ LOG_LEVEL=INFO
 ## 📚 API Endpoints
 
 ### Core Operations
-- `POST /upload/pdf` - Upload and process PDF files with MinerU extraction
+- `POST /upload-pdf` - Upload and process PDF files with MinerU extraction
 - `POST /query` - Query PDF content with intelligent responses and context
 - `GET /pdfs` - List all processed PDFs with pagination
 
@@ -124,7 +124,7 @@ LOG_LEVEL=INFO
 
 ### Upload PDF
 ```bash
-curl -X POST "http://localhost:8000/upload/pdf" \
+curl -X POST "http://localhost:8000/upload-pdf" \
      -H "Content-Type: multipart/form-data" \
      -F "file=@manual.pdf"
 ```

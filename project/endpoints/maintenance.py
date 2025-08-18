@@ -1,3 +1,10 @@
+"""
+PDF Intelligence Platform - Maintenance Generation Endpoint
+Handles generation of maintenance schedules from PDF content
+
+Version: 0.1
+"""
+
 import time
 import logging
 from fastapi import APIRouter, HTTPException, Path
