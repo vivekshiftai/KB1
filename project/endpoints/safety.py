@@ -56,7 +56,7 @@ async def generate_safety_information(pdf_name: str = Path(..., description="Nam
         
         # Generate safety information using LLM
         logger.info("Generating safety information with LLM...")
-        safety_information = llm_service.generate_safety_information(all_chunks)
+        safety_information = await llm_service.generate_safety_information(all_chunks)
         
         processing_time = calculate_processing_time(start_time)
         

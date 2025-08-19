@@ -32,13 +32,13 @@ def _get_embedding_model(model_name: str) -> SentenceTransformer:
 
 class VectorDatabase:
     def __init__(self):
-        self.db_type = "chromadb"  # Default to ChromaDB
+        self.db_type = settings.vector_db_type
         self.embedding_model = _get_embedding_model(settings.embedding_model)
         self.client = self._initialize_client()
     
     def _initialize_client(self):
         """Initialize vector database client"""
-        if self.db_type == "azure" and settings.azure_api_key:
+        if self.db_type == "azure" and settings.azure_openai_key:
             logger.info("Initializing Azure Vector Search client")
             return self._setup_azure_client()
         else:

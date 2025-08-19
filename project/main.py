@@ -29,7 +29,8 @@ async def lifespan(app: FastAPI):
     # Force CPU mode for all operations
     optimize_for_cpu()
     
-    logger.info(f"Chroma DB Path: {settings.chroma_db_path}")
+    logger.info(f"Vector DB Type: {settings.vector_db_type}")
+    logger.info(f"Models Directory: {settings.models_dir}")
     logger.info(f"Upload Directory: {settings.upload_dir}")
     logger.info(f"Output Directory: {settings.output_dir}")
     logger.info("✅ CPU mode enforced - All operations will use CPU")
@@ -116,8 +117,8 @@ async def global_exception_handler(request, exc):
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
-        host=settings.host,
-        port=settings.port,
-        reload=settings.reload,
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
         log_level=settings.log_level.lower()
     )

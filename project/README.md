@@ -29,30 +29,31 @@ A comprehensive backend API system that processes PDF manuals using MinerU, stor
    
    # For minimal installation (basic functionality only)
    pip install -r requirements-minimal.txt
-   ```
-
-3. **Set Environment Variables**
-   ```bash
-   # Copy the example environment file
-   cp env.example .env
    
-   # Edit the .env file with your Azure AI API key
-   # Replace 'your_azure_api_key_here' with your actual API key
+   # For development (includes testing and linting tools)
+   pip install -r requirements-dev.txt
    ```
 
-4. **Run the Application**
+3. **Run the Application**
    ```bash
-   # Option 1: Direct Python execution
+   # Option 1: Simple startup script (recommended)
+   chmod +x start.sh
+   ./start.sh
+   
+   # Option 2: Python startup script
+   python3 run.py
+   
+   # Option 3: Direct Python execution
    python main.py
    
-   # Option 2: Using uvicorn directly
+   # Option 4: Using uvicorn directly
    uvicorn main:app --host 0.0.0.0 --port 8000
    
-   # Option 3: For development with auto-reload
+   # Option 5: For development with auto-reload
    uvicorn main:app --host 0.0.0.0 --port 8000 --reload
    ```
 
-5. **Access API Documentation**
+4. **Access API Documentation**
    Open http://localhost:8000/docs for interactive API documentation
 
 ## API Endpoints
@@ -74,34 +75,32 @@ A comprehensive backend API system that processes PDF manuals using MinerU, stor
 
 ## Environment Variables
 
-Copy `env.example` to `.env` and update with your actual values:
-
 ```bash
-# Azure AI Configuration (Required)
-AZURE_API_KEY=your_azure_api_key_here
-AZURE_ENDPOINT=https://chgai.services.ai.azure.com/models
-AZURE_MODEL_NAME=Llama-3.2-90B-Vision-Instruct
-AZURE_API_VERSION=2024-05-01-preview
+# Required
+OPENAI_API_KEY=your_openai_key_here
+
+# Optional (Azure OpenAI fallback)
+AZURE_OPENAI_ENDPOINT=your_azure_endpoint_optional
+AZURE_OPENAI_KEY=your_azure_key_optional
 
 # Database Configuration
-CHROMA_DB_PATH=./chroma_db
-EMBEDDING_MODEL=all-MiniLM-L6-v2
+VECTOR_DB_TYPE=chromadb
+CHROMADB_PATH=./vector_db
 
 # File Storage
+MODELS_DIR=./pdf_extract_kit_models
 UPLOAD_DIR=./uploads
-OUTPUT_DIR=./outputs
+OUTPUT_DIR=./processed
 
 # Processing Configuration
 MAX_FILE_SIZE=52428800  # 50MB in bytes
-MAX_TOKENS=4000
-MAX_COMPLETION_TOKENS=1500
-MAX_CONTEXT_TOKENS=8000
+MAX_CHUNKS_PER_BATCH=25
+EMBEDDING_MODEL=all-MiniLM-L6-v2
 
 # MinerU Configuration
 DEVICE_MODE=cpu  # cpu or cuda
 FORMULA_ENABLE=true
 TABLE_ENABLE=true
-IMAGE_ENABLE=true
 
 # Logging
 LOG_LEVEL=INFO
@@ -131,8 +130,7 @@ The platform follows a modular architecture:
 - Separate collections per PDF for organized storage
 
 ### LLM Integration
-- Azure AI Inference powered intelligent responses
-- Llama-3.2-90B-Vision-Instruct model for advanced reasoning
+- GPT-4 powered intelligent responses
 - Context-aware query processing
 - Structured data generation for rules, maintenance, and safety
 
@@ -189,7 +187,7 @@ curl -X POST "http://localhost:8000/generate-safety/manual.pdf"
 1. Follow the existing code structure and patterns
 2. Add comprehensive logging and error handling
 3. Include proper type hints and documentation
-4. Test endpoints thoroughly (if needed)
+4. Test endpoints thoroughly
 5. Update README for new features
 
 ## License

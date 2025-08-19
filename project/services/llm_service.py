@@ -1,6 +1,6 @@
 """
 LLM Service
-Handles interactions with Azure AI Inference for intelligent responses
+Handles interactions with OpenAI GPT-4 for intelligent responses
 
 Version: 0.1
 """
@@ -8,10 +8,8 @@ Version: 0.1
 import json
 import logging
 import tiktoken
-from typing import List, Dict, Any
-from azure.ai.inference import ChatCompletionsClient
-from azure.ai.inference.models import SystemMessage, UserMessage
-from azure.core.credentials import AzureKeyCredential
+from typing import List, Dict, Any, Optional
+from openai import AsyncOpenAI
 from config import settings
 from models.schemas import Rule, MaintenanceTask, SafetyInfo
 
@@ -19,31 +17,15 @@ logger = logging.getLogger(__name__)
 
 class LLMService:
     def __init__(self):
-        """Initialize Azure AI Inference client"""
-        try:
-            self.client = ChatCompletionsClient(
-                endpoint=settings.azure_endpoint,
-                credential=AzureKeyCredential(settings.azure_api_key),
-                api_version=settings.azure_api_version
-            )
-            self.model = settings.azure_model_name
-            logger.info(f"Initialized Azure AI client with model: {self.model}")
-        except Exception as e:
-            logger.error(f"Failed to initialize Azure AI client: {str(e)}")
-            raise e
+        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.model = "gpt-4"
+        # Increase token limits for better handling of large documents
+        self.max_tokens = 8192
+        self.max_completion_tokens = 1500  # Reduced to allow more context
+        self.max_context_tokens = self.max_tokens - self.max_completion_tokens
+        self.encoding = tiktoken.encoding_for_model("gpt-4")
         
-        # Token management
-        self.max_tokens = settings.max_tokens
-        self.max_completion_tokens = settings.max_completion_tokens
-        self.max_context_tokens = settings.max_context_tokens
-        
-        # Initialize tokenizer
-        try:
-            self.encoding = tiktoken.get_encoding("cl100k_base")
-            logger.info("Initialized tiktoken encoding")
-        except Exception as e:
-            logger.warning(f"Failed to initialize tiktoken: {str(e)}")
-            self.encoding = None
+        logger.info(f"LLM Service initialized with max_tokens: {self.max_tokens}, max_context_tokens: {self.max_context_tokens}")
     
     def count_tokens(self, text: str) -> int:
         """Count tokens in text"""
@@ -164,7 +146,7 @@ class LLMService:
             # Fallback: simple character-based truncation
             return text[:max_tokens * 4] + " [Content truncated]"
     
-    def query_with_context(self, chunks: List[Dict[str, Any]], query: str) -> Dict[str, Any]:
+    async def query_with_context(self, chunks: List[Dict[str, Any]], query: str) -> Dict[str, Any]:
         """Query with context chunks using GPT-4"""
         logger.info(f"Processing query with {len(chunks)} context chunks")
         
@@ -248,17 +230,14 @@ Provide a clear answer. At the end, add "REFERENCES:" followed by the exact sect
             user_prompt = f"Please answer this query based on the following context:\n\n{context}\n\nQuery: {query}"
         
         try:
-            response = self.client.complete(
+            response = await self.client.chat.completions.create(
+                model=self.model,
                 messages=[
-                    SystemMessage(content=system_prompt),
-                    UserMessage(content=user_prompt)
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
                 ],
                 max_tokens=self.max_completion_tokens,
-                temperature=0.1,
-                top_p=0.9,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
-                model=self.model
+                temperature=0.1
             )
             
             answer = response.choices[0].message.content
@@ -276,7 +255,7 @@ Provide a clear answer. At the end, add "REFERENCES:" followed by the exact sect
             logger.error(f"Error in LLM query: {str(e)}")
             raise e
     
-    def generate_rules(self, chunks: List[Dict[str, Any]]) -> List[Rule]:
+    async def generate_rules(self, chunks: List[Dict[str, Any]]) -> List[Rule]:
         """Generate IoT monitoring rules from chunks"""
         logger.info(f"Generating rules from {len(chunks)} chunks")
         
@@ -352,17 +331,14 @@ Focus on:
             user_prompt = f"Please generate IoT monitoring rules based on this context:\n\n{context}"
         
         try:
-            response = self.client.complete(
+            response = await self.client.chat.completions.create(
+                model=self.model,
                 messages=[
-                    SystemMessage(content=system_prompt),
-                    UserMessage(content=user_prompt)
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
                 ],
                 max_tokens=self.max_completion_tokens,
-                temperature=0.2,
-                top_p=0.9,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
-                model=self.model
+                temperature=0.2
             )
             
             content = response.choices[0].message.content
@@ -389,7 +365,7 @@ Focus on:
             logger.error(f"Error generating rules: {str(e)}")
             raise e
     
-    def generate_maintenance_schedule(self, chunks: List[Dict[str, Any]]) -> List[MaintenanceTask]:
+    async def generate_maintenance_schedule(self, chunks: List[Dict[str, Any]]) -> List[MaintenanceTask]:
         """Generate maintenance schedule from chunks"""
         logger.info(f"Generating maintenance schedule from {len(chunks)} chunks")
         
@@ -464,17 +440,14 @@ Focus on:
             user_prompt = f"Please generate maintenance tasks based on this context:\n\n{context}"
         
         try:
-            response = self.client.complete(
+            response = await self.client.chat.completions.create(
+                model=self.model,
                 messages=[
-                    SystemMessage(content=system_prompt),
-                    UserMessage(content=user_prompt)
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
                 ],
                 max_tokens=self.max_completion_tokens,
-                temperature=0.1,
-                top_p=0.9,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
-                model=self.model
+                temperature=0.1
             )
             
             content = response.choices[0].message.content
@@ -499,7 +472,7 @@ Focus on:
             logger.error(f"Error generating maintenance schedule: {str(e)}")
             raise e
     
-    def generate_safety_information(self, chunks: List[Dict[str, Any]]) -> List[SafetyInfo]:
+    async def generate_safety_information(self, chunks: List[Dict[str, Any]]) -> List[SafetyInfo]:
         """Generate safety information from chunks"""
         logger.info(f"Generating safety information from {len(chunks)} chunks")
         
@@ -573,17 +546,14 @@ Focus on:
             user_prompt = f"Please generate safety information based on this context:\n\n{context}"
         
         try:
-            response = self.client.complete(
+            response = await self.client.chat.completions.create(
+                model=self.model,
                 messages=[
-                    SystemMessage(content=system_prompt),
-                    UserMessage(content=user_prompt)
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
                 ],
                 max_tokens=self.max_completion_tokens,
-                temperature=0.1,
-                top_p=0.9,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
-                model=self.model
+                temperature=0.1
             )
             
             content = response.choices[0].message.content

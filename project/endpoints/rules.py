@@ -56,7 +56,7 @@ async def generate_rules(pdf_name: str = Path(..., description="Name of the PDF 
         
         # Generate rules using LLM
         logger.info("Generating rules with LLM...")
-        rules = llm_service.generate_rules(all_chunks)
+        rules = await llm_service.generate_rules(all_chunks)
         
         processing_time = calculate_processing_time(start_time)
         

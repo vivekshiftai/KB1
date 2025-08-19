@@ -65,7 +65,7 @@ async def query_pdf(request: QueryRequest):
         # Generate response using LLM
         logger.info("Generating response with LLM...")
         try:
-            llm_result = llm_service.query_with_context(chunks, request.query)
+            llm_result = await llm_service.query_with_context(chunks, request.query)
             logger.info(f"LLM result keys: {list(llm_result.keys()) if isinstance(llm_result, dict) else 'Not a dict'}")
         except Exception as e:
             logger.error(f"LLM service error: {str(e)}")
