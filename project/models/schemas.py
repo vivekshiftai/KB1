@@ -26,7 +26,7 @@ class QueryResponse(BaseModel):
     message: str
     response: str
     chunks_used: List[str]
-    images: List[str]
+    images: List[ImageData]  # Actual image data instead of URLs
     tables: List[str]
     processing_time: str
 
@@ -93,5 +93,5 @@ class ImageData(BaseModel):
 class ChunkData(BaseModel):
     heading: str
     text: str
-    images: List[ImageData]
+    images: List[str]  # Image paths from MinerU output
     tables: List[str]

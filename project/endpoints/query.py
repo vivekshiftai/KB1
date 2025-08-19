@@ -124,17 +124,33 @@ async def query_pdf(request: QueryRequest):
         all_images = list(set(all_images))
         all_tables = list(set(all_tables))
         
-        # Convert image paths to URLs
-        image_urls = []
+        # Fetch actual image data from vector database
+        from models.schemas import ImageData
+        image_data_list = []
+        
         for image_path in all_images:
-            # Create URL for image serving endpoint
-            image_url = f"/images/{request.pdf_name}/{image_path}"
-            image_urls.append(image_url)
+            try:
+                # Get image data from vector database
+                image_data = await vector_db.get_image(collection_name, image_path)
+                if image_data:
+                    # Create ImageData object
+                    image_obj = ImageData(
+                        filename=image_data["metadata"]["filename"],
+                        data=image_data["data"],  # Base64 encoded image
+                        mime_type=image_data["content_type"],
+                        size=image_data["metadata"]["size"]
+                    )
+                    image_data_list.append(image_obj)
+                    logger.info(f"Fetched image: {image_path} ({image_data['metadata']['size']} bytes)")
+                else:
+                    logger.warning(f"Image not found: {image_path}")
+            except Exception as e:
+                logger.error(f"Error fetching image {image_path}: {str(e)}")
+                continue
         
         logger.info(f"Total unique images from used chunks: {len(all_images)}")
+        logger.info(f"Successfully fetched {len(image_data_list)} images")
         logger.info(f"Total unique tables from used chunks: {len(all_tables)}")
-        if image_urls:
-            logger.info(f"Image URLs: {image_urls}")
         if all_tables:
             logger.info(f"Tables from used chunks: {all_tables}")
         
@@ -147,7 +163,7 @@ async def query_pdf(request: QueryRequest):
             message="Query processed successfully",
             response=llm_result["response"],
             chunks_used=llm_result["chunks_used"],
-            images=image_urls,
+            images=image_data_list,
             tables=all_tables,
             processing_time=processing_time
         )
