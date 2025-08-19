@@ -30,9 +30,12 @@ class LLMService:
     
     def truncate_chunks_to_fit_context(self, chunks: List[Dict[str, Any]], system_prompt: str = "", user_prompt_template: str = "") -> List[Dict[str, Any]]:
         """Truncate chunks to fit within context limit"""
+        # Create a simple version of the template without placeholders for token counting
+        simple_template = user_prompt_template.replace("{context}", "CONTEXT_PLACEHOLDER").replace("{query}", "QUERY_PLACEHOLDER")
+        
         # Calculate available tokens for chunks
         system_tokens = self.count_tokens(system_prompt)
-        user_template_tokens = self.count_tokens(user_prompt_template)
+        user_template_tokens = self.count_tokens(simple_template)
         reserved_tokens = system_tokens + user_template_tokens + 100  # Buffer
         
         available_tokens = self.max_context_tokens - reserved_tokens
@@ -97,7 +100,7 @@ User Query: {query}
 Please provide a comprehensive answer and then list the specific sections/headings you referenced."""
         
         # Truncate chunks to fit within token limit
-        selected_chunks = self.truncate_chunks_to_fit_context(chunks, system_prompt, user_prompt_template.format(query=query))
+        selected_chunks = self.truncate_chunks_to_fit_context(chunks, system_prompt, user_prompt_template)
         
         if not selected_chunks:
             logger.warning("No chunks could fit within token limit")
@@ -138,6 +141,10 @@ Please provide a comprehensive answer and then list the specific sections/headin
         # Format the user prompt with context
         try:
             user_prompt = user_prompt_template.format(context=context, query=query)
+        except KeyError as e:
+            logger.error(f"Error formatting user prompt - missing placeholder: {str(e)}")
+            # Fallback to simple prompt
+            user_prompt = f"Please answer this query based on the following context:\n\n{context}\n\nQuery: {query}"
         except Exception as e:
             logger.error(f"Error formatting user prompt: {str(e)}")
             # Fallback to simple prompt
