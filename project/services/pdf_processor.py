@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class PDFProcessor:
     def __init__(self):
-        self.models_dir = settings.models_dir
+        self.models_dir = "./pdf_extract_kit_models"  # Default models directory
         self.chunker = MarkdownChunker()
         
     async def download_models_with_retry(self, retries: int = 3) -> str:

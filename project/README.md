@@ -29,10 +29,18 @@ A comprehensive backend API system that processes PDF manuals using MinerU, stor
    
    # For minimal installation (basic functionality only)
    pip install -r requirements-minimal.txt
-   
    ```
 
-3. **Run the Application**
+3. **Set Environment Variables**
+   ```bash
+   # Copy the example environment file
+   cp env.example .env
+   
+   # Edit the .env file with your Azure AI API key
+   # Replace 'your_azure_api_key_here' with your actual API key
+   ```
+
+4. **Run the Application**
    ```bash
    # Option 1: Direct Python execution
    python main.py
@@ -44,7 +52,7 @@ A comprehensive backend API system that processes PDF manuals using MinerU, stor
    uvicorn main:app --host 0.0.0.0 --port 8000 --reload
    ```
 
-4. **Access API Documentation**
+5. **Access API Documentation**
    Open http://localhost:8000/docs for interactive API documentation
 
 ## API Endpoints
@@ -65,6 +73,8 @@ A comprehensive backend API system that processes PDF manuals using MinerU, stor
 - `GET /` - Service information and available endpoints
 
 ## Environment Variables
+
+Copy `env.example` to `.env` and update with your actual values:
 
 ```bash
 # Azure AI Configuration (Required)
@@ -179,7 +189,7 @@ curl -X POST "http://localhost:8000/generate-safety/manual.pdf"
 1. Follow the existing code structure and patterns
 2. Add comprehensive logging and error handling
 3. Include proper type hints and documentation
-4. Test endpoints thoroughly
+4. Test endpoints thoroughly (if needed)
 5. Update README for new features
 
 ## License
