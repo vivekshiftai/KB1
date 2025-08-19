@@ -1,13 +1,13 @@
 # PDF Intelligence Platform
 
-A comprehensive backend API system that processes PDF manuals using MinerU, stores them in vector databases, and provides intelligent querying capabilities for IoT device documentation, rules generation, maintenance schedules, and safety information.
+A comprehensive backend API system that processes PDF manuals using MinerU, stores them in vector databases, and provides intelligent querying capabilities for IoT device documentation, rules generation, maintenance schedules, and safety information using Azure AI.
 
 ## Features
 
 - **PDF Processing**: Upload and process PDF manuals using MinerU with CPU-based local inference
 - **Intelligent Chunking**: Heading-based content chunking with image and table extraction
 - **Vector Storage**: ChromaDB integration with efficient similarity search
-- **Smart Querying**: GPT-4 powered intelligent responses with context awareness
+- **Smart Querying**: Azure AI (Llama-3.2-90B-Vision-Instruct) powered intelligent responses with context awareness
 - **Rules Generation**: Automated IoT monitoring rule creation from technical documentation
 - **Maintenance Scheduling**: Extract and structure maintenance tasks from manuals
 - **Safety Information**: Comprehensive safety guideline generation
@@ -19,7 +19,7 @@ A comprehensive backend API system that processes PDF manuals using MinerU, stor
 1. **Environment Setup**
    ```bash
    cp .env.example .env
-   # Edit .env with your OpenAI API key and other settings
+   # Edit .env with your Azure AI API key and other settings
    ```
 
 2. **Install Dependencies**
@@ -56,6 +56,11 @@ A comprehensive backend API system that processes PDF manuals using MinerU, stor
 4. **Access API Documentation**
    Open http://localhost:8000/docs for interactive API documentation
 
+5. **Test Azure AI Integration**
+   ```bash
+   python test_azure_ai.py
+   ```
+
 ## API Endpoints
 
 ### Core Operations
@@ -76,12 +81,12 @@ A comprehensive backend API system that processes PDF manuals using MinerU, stor
 ## Environment Variables
 
 ```bash
-# Required
-OPENAI_API_KEY=your_openai_key_here
+# Required - Azure AI Configuration
+AZURE_OPENAI_KEY=your_azure_ai_api_key_here
+AZURE_OPENAI_ENDPOINT=https://chgai.services.ai.azure.com/models
 
-# Optional (Azure OpenAI fallback)
-AZURE_OPENAI_ENDPOINT=your_azure_endpoint_optional
-AZURE_OPENAI_KEY=your_azure_key_optional
+# Optional - Legacy OpenAI Configuration (for fallback)
+OPENAI_API_KEY=your_openai_key_here
 
 # Database Configuration
 VECTOR_DB_TYPE=chromadb
@@ -105,6 +110,19 @@ TABLE_ENABLE=true
 # Logging
 LOG_LEVEL=INFO
 ```
+
+## Azure AI Setup
+
+This platform uses Azure AI with the Llama-3.2-90B-Vision-Instruct model for intelligent responses. To set up:
+
+1. **Get Azure AI API Key**: Obtain your API key from the Azure portal
+2. **Configure Environment**: Set `AZURE_OPENAI_KEY` in your `.env` file
+3. **Test Integration**: Run `python test_azure_ai.py` to verify the setup
+
+The platform automatically uses the following Azure AI configuration:
+- **Endpoint**: `https://chgai.services.ai.azure.com/models`
+- **Model**: `Llama-3.2-90B-Vision-Instruct`
+- **API Version**: `2024-05-01-preview`
 
 ## Architecture
 
@@ -130,9 +148,11 @@ The platform follows a modular architecture:
 - Separate collections per PDF for organized storage
 
 ### LLM Integration
-- GPT-4 powered intelligent responses
+- Azure AI (Llama-3.2-90B-Vision-Instruct) powered intelligent responses
 - Context-aware query processing
 - Structured data generation for rules, maintenance, and safety
+- Support for multiple conversation turns
+- Streaming response capabilities
 
 ### Production Features
 - Comprehensive error handling and detailed logging with structured output

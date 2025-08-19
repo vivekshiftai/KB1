@@ -11,10 +11,12 @@ from pydantic_settings import BaseSettings
 from typing import Optional
 
 class Settings(BaseSettings):
-    # OpenAI Configuration
-    openai_api_key: str
-    azure_openai_endpoint: Optional[str] = None
-    azure_openai_key: Optional[str] = None
+    # Azure AI Configuration (Primary)
+    azure_openai_key: str
+    azure_openai_endpoint: Optional[str] = "https://chgai.services.ai.azure.com/models"
+    
+    # OpenAI Configuration (Legacy - Optional)
+    openai_api_key: Optional[str] = None
     
     # Vector Database Configuration
     vector_db_type: str = "chromadb"

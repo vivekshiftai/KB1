@@ -1,6 +1,6 @@
 """
 LLM Service
-Handles interactions with OpenAI GPT-4 for intelligent responses
+Handles interactions with Azure AI for intelligent responses
 
 Version: 0.1
 """
@@ -9,7 +9,9 @@ import json
 import logging
 import tiktoken
 from typing import List, Dict, Any, Optional
-from openai import AsyncOpenAI
+from azure.ai.inference import ChatCompletionsClient
+from azure.ai.inference.models import SystemMessage, UserMessage, AssistantMessage
+from azure.core.credentials import AzureKeyCredential
 from config import settings
 from models.schemas import Rule, MaintenanceTask, SafetyInfo
 
@@ -17,15 +19,27 @@ logger = logging.getLogger(__name__)
 
 class LLMService:
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
-        self.model = "gpt-4"
+        # Azure AI Configuration
+        self.endpoint = "https://chgai.services.ai.azure.com/models"
+        self.model_name = "Llama-3.2-90B-Vision-Instruct"
+        self.api_version = "2024-05-01-preview"
+        
+        # Initialize Azure AI client
+        self.client = ChatCompletionsClient(
+            endpoint=self.endpoint,
+            credential=AzureKeyCredential(settings.azure_openai_key),
+            api_version=self.api_version
+        )
+        
         # Increase token limits for better handling of large documents
         self.max_tokens = 8192
         self.max_completion_tokens = 1500  # Reduced to allow more context
         self.max_context_tokens = self.max_tokens - self.max_completion_tokens
-        self.encoding = tiktoken.encoding_for_model("gpt-4")
+        self.encoding = tiktoken.encoding_for_model("gpt-4")  # Keep using GPT-4 encoding for token counting
         
-        logger.info(f"LLM Service initialized with max_tokens: {self.max_tokens}, max_context_tokens: {self.max_context_tokens}")
+        logger.info(f"LLM Service initialized with Azure AI - max_tokens: {self.max_tokens}, max_context_tokens: {self.max_context_tokens}")
+        logger.info(f"Using Azure AI endpoint: {self.endpoint}")
+        logger.info(f"Using model: {self.model_name}")
     
     def count_tokens(self, text: str) -> int:
         """Count tokens in text"""
@@ -147,7 +161,7 @@ class LLMService:
             return text[:max_tokens * 4] + " [Content truncated]"
     
     async def query_with_context(self, chunks: List[Dict[str, Any]], query: str) -> Dict[str, Any]:
-        """Query with context chunks using GPT-4"""
+        """Query with context chunks using Azure AI"""
         logger.info(f"Processing query with {len(chunks)} context chunks")
         
         # Debug: Log chunk structure
@@ -173,7 +187,6 @@ Provide a clear answer. At the end, add "REFERENCES:" followed by the exact sect
         
         if not selected_chunks:
             logger.error("No chunks could fit within token limit")
-            logger.error(f"Available tokens: {available_tokens}")
             logger.error(f"Total chunks received: {len(chunks)}")
             if chunks:
                 first_chunk = chunks[0]
@@ -230,14 +243,17 @@ Provide a clear answer. At the end, add "REFERENCES:" followed by the exact sect
             user_prompt = f"Please answer this query based on the following context:\n\n{context}\n\nQuery: {query}"
         
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
+            response = self.client.complete(
                 messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                    SystemMessage(content=system_prompt),
+                    UserMessage(content=user_prompt)
                 ],
                 max_tokens=self.max_completion_tokens,
-                temperature=0.1
+                temperature=0.1,
+                top_p=0.1,
+                presence_penalty=0.0,
+                frequency_penalty=0.0,
+                model=self.model_name
             )
             
             answer = response.choices[0].message.content
@@ -331,14 +347,17 @@ Focus on:
             user_prompt = f"Please generate IoT monitoring rules based on this context:\n\n{context}"
         
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
+            response = self.client.complete(
                 messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                    SystemMessage(content=system_prompt),
+                    UserMessage(content=user_prompt)
                 ],
                 max_tokens=self.max_completion_tokens,
-                temperature=0.2
+                temperature=0.2,
+                top_p=0.1,
+                presence_penalty=0.0,
+                frequency_penalty=0.0,
+                model=self.model_name
             )
             
             content = response.choices[0].message.content
@@ -440,14 +459,17 @@ Focus on:
             user_prompt = f"Please generate maintenance tasks based on this context:\n\n{context}"
         
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
+            response = self.client.complete(
                 messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                    SystemMessage(content=system_prompt),
+                    UserMessage(content=user_prompt)
                 ],
                 max_tokens=self.max_completion_tokens,
-                temperature=0.1
+                temperature=0.1,
+                top_p=0.1,
+                presence_penalty=0.0,
+                frequency_penalty=0.0,
+                model=self.model_name
             )
             
             content = response.choices[0].message.content
@@ -546,14 +568,17 @@ Focus on:
             user_prompt = f"Please generate safety information based on this context:\n\n{context}"
         
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
+            response = self.client.complete(
                 messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                    SystemMessage(content=system_prompt),
+                    UserMessage(content=user_prompt)
                 ],
                 max_tokens=self.max_completion_tokens,
-                temperature=0.1
+                temperature=0.1,
+                top_p=0.1,
+                presence_penalty=0.0,
+                frequency_penalty=0.0,
+                model=self.model_name
             )
             
             content = response.choices[0].message.content
