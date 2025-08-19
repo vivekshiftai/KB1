@@ -24,18 +24,34 @@ class LLMService:
         self.model_name = "Llama-3.2-90B-Vision-Instruct"
         self.api_version = "2024-05-01-preview"
         
-        # Initialize Azure AI client
-        self.client = ChatCompletionsClient(
-            endpoint=self.endpoint,
-            credential=AzureKeyCredential(settings.azure_openai_key),
-            api_version=self.api_version
-        )
+        # Validate Azure AI key
+        if not settings.azure_openai_key:
+            logger.error("Azure AI key not configured. Please set AZURE_OPENAI_KEY in your environment.")
+            raise ValueError("Azure AI key is required but not configured")
+        
+        try:
+            # Initialize Azure AI client
+            self.client = ChatCompletionsClient(
+                endpoint=self.endpoint,
+                credential=AzureKeyCredential(settings.azure_openai_key),
+                api_version=self.api_version
+            )
+            logger.info("Azure AI client initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize Azure AI client: {str(e)}")
+            raise e
         
         # Increase token limits for better handling of large documents
         self.max_tokens = 8192
         self.max_completion_tokens = 1500  # Reduced to allow more context
         self.max_context_tokens = self.max_tokens - self.max_completion_tokens
-        self.encoding = tiktoken.encoding_for_model("gpt-4")  # Keep using GPT-4 encoding for token counting
+        
+        try:
+            self.encoding = tiktoken.encoding_for_model("gpt-4")  # Keep using GPT-4 encoding for token counting
+        except Exception as e:
+            logger.warning(f"Failed to load GPT-4 encoding, using default: {str(e)}")
+            # Fallback to a basic encoding
+            self.encoding = tiktoken.get_encoding("cl100k_base")
         
         logger.info(f"LLM Service initialized with Azure AI - max_tokens: {self.max_tokens}, max_context_tokens: {self.max_context_tokens}")
         logger.info(f"Using Azure AI endpoint: {self.endpoint}")

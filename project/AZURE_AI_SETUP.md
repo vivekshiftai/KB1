@@ -68,19 +68,42 @@ pip install -r requirements.txt
 Run the test script to verify your Azure AI setup:
 
 ```bash
-python test_azure_ai.py
+python test_setup.py
 ```
 
 You should see output like:
 ```
-Testing Azure AI Integration...
-Endpoint: https://chgai.services.ai.azure.com/models
-API Key configured: Yes
+PDF Intelligence Platform - Setup Test
+==================================================
+Testing Environment Setup...
+✓ .env file found
+✓ AZURE_OPENAI_KEY is set
+  Key length: 32 characters
+✓ AZURE_OPENAI_ENDPOINT is set: https://chgai.services.ai.azure.com/models
+
+Testing Module Imports...
+✓ FastAPI imported successfully
+✓ Uvicorn imported successfully
+✓ Azure AI Inference imported successfully
+✓ Azure Core imported successfully
+✓ Tiktoken imported successfully
+✓ ChromaDB imported successfully
+✓ Sentence Transformers imported successfully
+
+Testing Configuration...
+✓ Configuration loaded successfully
+✓ Azure AI key configured: Yes
+✓ Azure AI endpoint: https://chgai.services.ai.azure.com/models
+✓ Vector DB type: chromadb
+✓ Upload directory: ./uploads
+✓ Output directory: ./processed
+
+Testing LLM Service...
+✓ LLM Service module imported successfully
 ✓ LLM Service initialized successfully
-Testing query with context...
-✓ Query completed successfully
-Response: This document appears to be about industrial equipment maintenance...
-🎉 All Azure AI tests passed successfully!
+
+==================================================
+Test completed!
 ```
 
 ## Azure AI Configuration Details
