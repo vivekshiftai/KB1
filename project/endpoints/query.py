@@ -97,7 +97,14 @@ async def query_pdf(request: QueryRequest):
                     heading = chunk.get("heading", "")
                 
                 # Check if this chunk's heading is in the LLM's referenced sections
-                if heading in llm_result['chunks_used']:
+                # Use case-insensitive matching for better reliability
+                chunk_used = False
+                for referenced_heading in llm_result['chunks_used']:
+                    if heading.lower() == referenced_heading.lower() or heading.lower() in referenced_heading.lower() or referenced_heading.lower() in heading.lower():
+                        chunk_used = True
+                        break
+                
+                if chunk_used:
                     used_chunks.append(chunk)
                     logger.info(f"Found used chunk: '{heading}' with {len(chunk.get('images', []))} images, {len(chunk.get('tables', []))} tables")
             except Exception as e:

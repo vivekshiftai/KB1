@@ -19,10 +19,13 @@ class LLMService:
     def __init__(self):
         self.client = AsyncOpenAI(api_key=settings.openai_api_key)
         self.model = "gpt-4"
+        # Increase token limits for better handling of large documents
         self.max_tokens = 8192
-        self.max_completion_tokens = 2000
+        self.max_completion_tokens = 1500  # Reduced to allow more context
         self.max_context_tokens = self.max_tokens - self.max_completion_tokens
         self.encoding = tiktoken.encoding_for_model("gpt-4")
+        
+        logger.info(f"LLM Service initialized with max_tokens: {self.max_tokens}, max_context_tokens: {self.max_context_tokens}")
     
     def count_tokens(self, text: str) -> int:
         """Count tokens in text"""
@@ -36,18 +39,24 @@ class LLMService:
         # Calculate available tokens for chunks
         system_tokens = self.count_tokens(system_prompt)
         user_template_tokens = self.count_tokens(simple_template)
-        reserved_tokens = system_tokens + user_template_tokens + 100  # Buffer
+        reserved_tokens = system_tokens + user_template_tokens + 200  # Increased buffer
         
         available_tokens = self.max_context_tokens - reserved_tokens
         
         logger.info(f"Available tokens for chunks: {available_tokens}")
         logger.info(f"System prompt tokens: {system_tokens}")
         logger.info(f"User template tokens: {user_template_tokens}")
+        logger.info(f"Total chunks to process: {len(chunks)}")
+        
+        # If we have very few tokens available, try to use at least one chunk
+        if available_tokens < 1000:
+            logger.warning(f"Very few tokens available ({available_tokens}), will try to use at least one chunk")
+            available_tokens = min(available_tokens, 2000)  # Ensure we have some minimum tokens
         
         selected_chunks = []
         current_tokens = 0
         
-        for chunk in chunks:
+        for i, chunk in enumerate(chunks):
             try:
                 # Handle both possible chunk structures
                 if "metadata" in chunk and "document" in chunk:
@@ -62,6 +71,18 @@ class LLMService:
                 chunk_text = f"**{heading}**\n{content}"
                 chunk_tokens = self.count_tokens(chunk_text)
                 
+                logger.info(f"Chunk {i+1}: '{heading}' ({chunk_tokens} tokens)")
+                
+                # If this is the first chunk and it's too large, truncate it
+                if i == 0 and chunk_tokens > available_tokens:
+                    logger.warning(f"First chunk is too large ({chunk_tokens} tokens), truncating content")
+                    # Truncate the content to fit
+                    max_content_tokens = available_tokens - 100  # Leave some space for heading
+                    truncated_content = self._truncate_text_to_tokens(content, max_content_tokens)
+                    chunk["document"] = truncated_content  # Update the chunk with truncated content
+                    chunk_tokens = self.count_tokens(f"**{heading}**\n{truncated_content}")
+                    logger.info(f"Truncated chunk to {chunk_tokens} tokens")
+                
                 if current_tokens + chunk_tokens <= available_tokens:
                     selected_chunks.append(chunk)
                     current_tokens += chunk_tokens
@@ -70,11 +91,60 @@ class LLMService:
                     logger.info(f"Skipping chunk '{heading}' ({chunk_tokens} tokens) - would exceed limit")
                     break
             except Exception as e:
-                logger.warning(f"Error processing chunk in truncation: {str(e)}")
+                logger.warning(f"Error processing chunk {i} in truncation: {str(e)}")
                 continue
         
         logger.info(f"Selected {len(selected_chunks)} chunks with {current_tokens} tokens")
+        
+        # If no chunks were selected, try to use at least the first chunk with heavy truncation
+        if not selected_chunks and chunks:
+            logger.warning("No chunks could fit, trying to use first chunk with heavy truncation")
+            first_chunk = chunks[0]
+            if "metadata" in first_chunk and "document" in first_chunk:
+                heading = first_chunk.get("metadata", {}).get("heading", "")
+                content = first_chunk.get("document", "")
+            else:
+                heading = first_chunk.get("heading", "")
+                content = first_chunk.get("text", first_chunk.get("content", ""))
+            
+            # Truncate to a very small size
+            max_tokens = min(available_tokens - 200, 1000)
+            truncated_content = self._truncate_text_to_tokens(content, max_tokens)
+            first_chunk["document"] = truncated_content
+            selected_chunks = [first_chunk]
+            logger.info(f"Using heavily truncated first chunk: {len(truncated_content)} characters")
+        
         return selected_chunks
+    
+    def _truncate_text_to_tokens(self, text: str, max_tokens: int) -> str:
+        """Truncate text to fit within token limit"""
+        try:
+            # Encode the text to get tokens
+            tokens = self.encoding.encode(text)
+            
+            # If text is already within limit, return as is
+            if len(tokens) <= max_tokens:
+                return text
+            
+            # Truncate tokens and decode back to text
+            truncated_tokens = tokens[:max_tokens]
+            truncated_text = self.encoding.decode(truncated_tokens)
+            
+            # Try to end at a sentence boundary
+            last_period = truncated_text.rfind('.')
+            last_exclamation = truncated_text.rfind('!')
+            last_question = truncated_text.rfind('?')
+            
+            end_pos = max(last_period, last_exclamation, last_question)
+            if end_pos > len(truncated_text) * 0.8:  # Only if we're not cutting too much
+                truncated_text = truncated_text[:end_pos + 1]
+            
+            return truncated_text + " [Content truncated due to length]"
+            
+        except Exception as e:
+            logger.error(f"Error truncating text: {str(e)}")
+            # Fallback: simple character-based truncation
+            return text[:max_tokens * 4] + " [Content truncated]"
     
     async def query_with_context(self, chunks: List[Dict[str, Any]], query: str) -> Dict[str, Any]:
         """Query with context chunks using GPT-4"""
@@ -88,27 +158,31 @@ class LLMService:
         # System prompt
         system_prompt = "You are a technical documentation assistant. Provide accurate, detailed answers based on the provided manual sections."
         
-        # User prompt template
-        user_prompt_template = """Based on the following technical manual sections, please answer the user's query. 
-Please identify which specific sections you used to formulate your answer.
+        # User prompt template (simplified to use fewer tokens)
+        user_prompt_template = """Answer the user's query based on the provided context.
 
 Context:
 {context}
 
-User Query: {query}
+Query: {query}
 
-Please provide a comprehensive answer and then list the specific sections/headings you referenced.
-
-IMPORTANT: At the end of your response, include a section called "REFERENCES:" and list ONLY the exact section headings you used to answer the query. For example:
-REFERENCES:
-- Section 1: Introduction
-- Section 3: Installation Guide"""
+Provide a clear answer. At the end, add "REFERENCES:" followed by the exact section headings you used."""
         
         # Truncate chunks to fit within token limit
         selected_chunks = self.truncate_chunks_to_fit_context(chunks, system_prompt, user_prompt_template)
         
         if not selected_chunks:
-            logger.warning("No chunks could fit within token limit")
+            logger.error("No chunks could fit within token limit")
+            logger.error(f"Available tokens: {available_tokens}")
+            logger.error(f"Total chunks received: {len(chunks)}")
+            if chunks:
+                first_chunk = chunks[0]
+                if "metadata" in first_chunk and "document" in first_chunk:
+                    first_chunk_tokens = self.count_tokens(first_chunk.get("document", ""))
+                else:
+                    first_chunk_tokens = self.count_tokens(first_chunk.get("text", ""))
+                logger.error(f"First chunk tokens: {first_chunk_tokens}")
+            
             return {
                 "response": "I apologize, but the content is too large to process. Please try a more specific query or upload a smaller document.",
                 "chunks_used": []
@@ -509,11 +583,14 @@ Focus on:
         referenced_sections = []
         
         try:
+            logger.info(f"Extracting references from answer: {answer[:200]}...")
+            
             # Look for REFERENCES section in the answer
             if "REFERENCES:" in answer:
                 # Extract the REFERENCES section
                 ref_start = answer.find("REFERENCES:")
                 ref_section = answer[ref_start:]
+                logger.info(f"Found REFERENCES section: {ref_section}")
                 
                 # Extract section headings from the references
                 lines = ref_section.split('\n')
@@ -524,11 +601,13 @@ Focus on:
                         heading = line[1:].strip()
                         if heading:
                             referenced_sections.append(heading)
+                            logger.info(f"Extracted bullet reference: {heading}")
                     elif ':' in line and not line.startswith('REFERENCES:'):
                         # Handle format like "Section 1: Introduction"
                         heading = line.strip()
                         if heading:
                             referenced_sections.append(heading)
+                            logger.info(f"Extracted colon reference: {heading}")
             
             # If no explicit REFERENCES section, try to match headings in the answer
             if not referenced_sections:
@@ -545,16 +624,48 @@ Focus on:
                         
                         if heading and heading.lower() in answer.lower():
                             referenced_sections.append(heading)
+                            logger.info(f"Matched heading in text: {heading}")
                     except Exception as e:
                         logger.warning(f"Error extracting heading from chunk: {str(e)}")
                         continue
             
-            logger.info(f"Extracted referenced sections: {referenced_sections}")
+            # If still no references found, use all chunks (fallback)
+            if not referenced_sections:
+                logger.warning("No references found, using all chunks as fallback")
+                for chunk in chunks:
+                    try:
+                        if "metadata" in chunk and "document" in chunk:
+                            heading = chunk.get("metadata", {}).get("heading", "")
+                        else:
+                            heading = chunk.get("heading", "")
+                        
+                        if heading:
+                            referenced_sections.append(heading)
+                    except Exception as e:
+                        logger.warning(f"Error getting heading from chunk: {str(e)}")
+                        continue
+            
+            logger.info(f"Final extracted referenced sections: {referenced_sections}")
             return referenced_sections
             
         except Exception as e:
             logger.error(f"Error extracting referenced sections: {str(e)}")
-            return []
+            # Fallback: return all chunk headings
+            fallback_sections = []
+            for chunk in chunks:
+                try:
+                    if "metadata" in chunk and "document" in chunk:
+                        heading = chunk.get("metadata", {}).get("heading", "")
+                    else:
+                        heading = chunk.get("heading", "")
+                    
+                    if heading:
+                        fallback_sections.append(heading)
+                except Exception:
+                    continue
+            
+            logger.info(f"Using fallback sections: {fallback_sections}")
+            return fallback_sections
 
     def _parse_rules_from_text(self, text: str) -> List[Rule]:
         """Parse rules from plain text response"""
