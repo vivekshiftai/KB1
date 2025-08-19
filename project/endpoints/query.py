@@ -47,6 +47,15 @@ async def query_pdf(request: QueryRequest):
             top_k=request.top_k
         )
         
+        # Debug: Log chunk structure
+        if chunks:
+            logger.info(f"Retrieved {len(chunks)} chunks")
+            logger.info(f"First chunk structure: {list(chunks[0].keys())}")
+            if 'metadata' in chunks[0]:
+                logger.info(f"First chunk metadata: {list(chunks[0]['metadata'].keys())}")
+        else:
+            logger.warning("No chunks retrieved from vector database")
+        
         if not chunks:
             raise HTTPException(
                 status_code=404,
@@ -55,7 +64,18 @@ async def query_pdf(request: QueryRequest):
         
         # Generate response using LLM
         logger.info("Generating response with LLM...")
-        llm_result = await llm_service.query_with_context(chunks, request.query)
+        try:
+            llm_result = await llm_service.query_with_context(chunks, request.query)
+            logger.info(f"LLM result keys: {list(llm_result.keys()) if isinstance(llm_result, dict) else 'Not a dict'}")
+        except Exception as e:
+            logger.error(f"LLM service error: {str(e)}")
+            logger.error(f"Error type: {type(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to generate response: {str(e)}"
+            )
         
         # Collect all images and tables from used chunks
         all_images = []

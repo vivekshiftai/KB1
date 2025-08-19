@@ -45,18 +45,30 @@ class LLMService:
         current_tokens = 0
         
         for chunk in chunks:
-            heading = chunk["metadata"].get("heading", "")
-            content = chunk["document"]
-            chunk_text = f"**{heading}**\n{content}"
-            chunk_tokens = self.count_tokens(chunk_text)
-            
-            if current_tokens + chunk_tokens <= available_tokens:
-                selected_chunks.append(chunk)
-                current_tokens += chunk_tokens
-                logger.info(f"Added chunk '{heading}' ({chunk_tokens} tokens), total: {current_tokens}")
-            else:
-                logger.info(f"Skipping chunk '{heading}' ({chunk_tokens} tokens) - would exceed limit")
-                break
+            try:
+                # Handle both possible chunk structures
+                if "metadata" in chunk and "document" in chunk:
+                    # Vector DB format
+                    heading = chunk.get("metadata", {}).get("heading", "")
+                    content = chunk.get("document", "")
+                else:
+                    # Fallback format
+                    heading = chunk.get("heading", "")
+                    content = chunk.get("text", chunk.get("content", ""))
+                
+                chunk_text = f"**{heading}**\n{content}"
+                chunk_tokens = self.count_tokens(chunk_text)
+                
+                if current_tokens + chunk_tokens <= available_tokens:
+                    selected_chunks.append(chunk)
+                    current_tokens += chunk_tokens
+                    logger.info(f"Added chunk '{heading}' ({chunk_tokens} tokens), total: {current_tokens}")
+                else:
+                    logger.info(f"Skipping chunk '{heading}' ({chunk_tokens} tokens) - would exceed limit")
+                    break
+            except Exception as e:
+                logger.warning(f"Error processing chunk in truncation: {str(e)}")
+                continue
         
         logger.info(f"Selected {len(selected_chunks)} chunks with {current_tokens} tokens")
         return selected_chunks
@@ -64,6 +76,11 @@ class LLMService:
     async def query_with_context(self, chunks: List[Dict[str, Any]], query: str) -> Dict[str, Any]:
         """Query with context chunks using GPT-4"""
         logger.info(f"Processing query with {len(chunks)} context chunks")
+        
+        # Debug: Log chunk structure
+        if chunks:
+            logger.info(f"First chunk keys: {list(chunks[0].keys())}")
+            logger.info(f"First chunk metadata keys: {list(chunks[0].get('metadata', {}).keys())}")
         
         # System prompt
         system_prompt = "You are a technical documentation assistant. Provide accurate, detailed answers based on the provided manual sections."
@@ -92,14 +109,39 @@ Please provide a comprehensive answer and then list the specific sections/headin
         # Prepare context from selected chunks
         context_parts = []
         for i, chunk in enumerate(selected_chunks):
-            heading = chunk["metadata"].get("heading", f"Section {i+1}")
-            content = chunk["document"]
-            context_parts.append(f"**{heading}**\n{content}")
+            try:
+                # Handle both possible chunk structures
+                if "metadata" in chunk and "document" in chunk:
+                    # Vector DB format
+                    heading = chunk.get("metadata", {}).get("heading", f"Section {i+1}")
+                    content = chunk.get("document", "")
+                else:
+                    # Fallback format
+                    heading = chunk.get("heading", f"Section {i+1}")
+                    content = chunk.get("text", chunk.get("content", ""))
+                
+                if content:
+                    context_parts.append(f"**{heading}**\n{content}")
+            except Exception as e:
+                logger.warning(f"Error processing chunk {i}: {str(e)}")
+                continue
+        
+        if not context_parts:
+            logger.warning("No valid context could be extracted from chunks")
+            return {
+                "response": "I apologize, but I couldn't extract meaningful content from the document. Please try a different query or upload a different document.",
+                "chunks_used": []
+            }
         
         context = "\n\n".join(context_parts)
         
         # Format the user prompt with context
-        user_prompt = user_prompt_template.format(context=context, query=query)
+        try:
+            user_prompt = user_prompt_template.format(context=context, query=query)
+        except Exception as e:
+            logger.error(f"Error formatting user prompt: {str(e)}")
+            # Fallback to simple prompt
+            user_prompt = f"Please answer this query based on the following context:\n\n{context}\n\nQuery: {query}"
         
         try:
             response = await self.client.chat.completions.create(
@@ -117,9 +159,20 @@ Please provide a comprehensive answer and then list the specific sections/headin
             # Simple parsing to extract referenced sections
             chunks_used = []
             for chunk in chunks:
-                heading = chunk["metadata"].get("heading", "")
-                if heading.lower() in answer.lower():
-                    chunks_used.append(heading)
+                try:
+                    # Handle both possible chunk structures
+                    if "metadata" in chunk and "document" in chunk:
+                        # Vector DB format
+                        heading = chunk.get("metadata", {}).get("heading", "")
+                    else:
+                        # Fallback format
+                        heading = chunk.get("heading", "")
+                    
+                    if heading and heading.lower() in answer.lower():
+                        chunks_used.append(heading)
+                except Exception as e:
+                    logger.warning(f"Error extracting heading from chunk: {str(e)}")
+                    continue
             
             return {
                 "response": answer,
@@ -174,14 +227,36 @@ Focus on:
         # Prepare context from selected chunks
         context_parts = []
         for chunk in selected_chunks:
-            heading = chunk["metadata"].get("heading", "")
-            content = chunk["document"]
-            context_parts.append(f"**{heading}**\n{content}")
+            try:
+                # Handle both possible chunk structures
+                if "metadata" in chunk and "document" in chunk:
+                    # Vector DB format
+                    heading = chunk.get("metadata", {}).get("heading", "")
+                    content = chunk.get("document", "")
+                else:
+                    # Fallback format
+                    heading = chunk.get("heading", "")
+                    content = chunk.get("text", chunk.get("content", ""))
+                
+                if content:
+                    context_parts.append(f"**{heading}**\n{content}")
+            except Exception as e:
+                logger.warning(f"Error processing chunk in rules generation: {str(e)}")
+                continue
+        
+        if not context_parts:
+            logger.warning("No valid context could be extracted for rules generation")
+            return []
         
         context = "\n\n".join(context_parts)
         
         # Format the user prompt with context
-        user_prompt = user_prompt_template.format(context=context)
+        try:
+            user_prompt = user_prompt_template.format(context=context)
+        except Exception as e:
+            logger.error(f"Error formatting user prompt in rules generation: {str(e)}")
+            # Fallback to simple prompt
+            user_prompt = f"Please generate IoT monitoring rules based on this context:\n\n{context}"
         
         try:
             response = await self.client.chat.completions.create(
@@ -261,14 +336,36 @@ Focus on:
         # Prepare context from selected chunks
         context_parts = []
         for chunk in selected_chunks:
-            heading = chunk["metadata"].get("heading", "")
-            content = chunk["document"]
-            context_parts.append(f"**{heading}**\n{content}")
+            try:
+                # Handle both possible chunk structures
+                if "metadata" in chunk and "document" in chunk:
+                    # Vector DB format
+                    heading = chunk.get("metadata", {}).get("heading", "")
+                    content = chunk.get("document", "")
+                else:
+                    # Fallback format
+                    heading = chunk.get("heading", "")
+                    content = chunk.get("text", chunk.get("content", ""))
+                
+                if content:
+                    context_parts.append(f"**{heading}**\n{content}")
+            except Exception as e:
+                logger.warning(f"Error processing chunk in maintenance generation: {str(e)}")
+                continue
+        
+        if not context_parts:
+            logger.warning("No valid context could be extracted for maintenance generation")
+            return []
         
         context = "\n\n".join(context_parts)
         
         # Format the user prompt with context
-        user_prompt = user_prompt_template.format(context=context)
+        try:
+            user_prompt = user_prompt_template.format(context=context)
+        except Exception as e:
+            logger.error(f"Error formatting user prompt in maintenance generation: {str(e)}")
+            # Fallback to simple prompt
+            user_prompt = f"Please generate maintenance tasks based on this context:\n\n{context}"
         
         try:
             response = await self.client.chat.completions.create(
@@ -345,14 +442,36 @@ Focus on:
         # Prepare context from selected chunks
         context_parts = []
         for chunk in selected_chunks:
-            heading = chunk["metadata"].get("heading", "")
-            content = chunk["document"]
-            context_parts.append(f"**{heading}**\n{content}")
+            try:
+                # Handle both possible chunk structures
+                if "metadata" in chunk and "document" in chunk:
+                    # Vector DB format
+                    heading = chunk.get("metadata", {}).get("heading", "")
+                    content = chunk.get("document", "")
+                else:
+                    # Fallback format
+                    heading = chunk.get("heading", "")
+                    content = chunk.get("text", chunk.get("content", ""))
+                
+                if content:
+                    context_parts.append(f"**{heading}**\n{content}")
+            except Exception as e:
+                logger.warning(f"Error processing chunk in safety generation: {str(e)}")
+                continue
+        
+        if not context_parts:
+            logger.warning("No valid context could be extracted for safety generation")
+            return []
         
         context = "\n\n".join(context_parts)
         
         # Format the user prompt with context
-        user_prompt = user_prompt_template.format(context=context)
+        try:
+            user_prompt = user_prompt_template.format(context=context)
+        except Exception as e:
+            logger.error(f"Error formatting user prompt in safety generation: {str(e)}")
+            # Fallback to simple prompt
+            user_prompt = f"Please generate safety information based on this context:\n\n{context}"
         
         try:
             response = await self.client.chat.completions.create(
