@@ -16,6 +16,13 @@ class PDFUploadResponse(BaseModel):
     processing_time: str
     collection_name: str
 
+class ImageData(BaseModel):
+    """Image data with metadata"""
+    filename: str
+    data: str  # Base64 encoded image data
+    mime_type: str
+    size: int
+
 class QueryRequest(BaseModel):
     pdf_name: str = Field(..., description="Name of the PDF file to query")
     query: str = Field(..., description="Query text")
@@ -82,13 +89,6 @@ class StandardResponse(BaseModel):
     message: str
     data: Optional[Dict[str, Any]] = None
     processing_time: Optional[str] = None
-
-class ImageData(BaseModel):
-    """Image data with metadata"""
-    filename: str
-    data: str  # Base64 encoded image data
-    mime_type: str
-    size: int
 
 class ChunkData(BaseModel):
     heading: str
