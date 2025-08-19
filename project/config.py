@@ -6,30 +6,24 @@ Version: 0.1
 """
 
 import os
-from pathlib import Path
 from pydantic_settings import BaseSettings
 from typing import Optional
 
 class Settings(BaseSettings):
-    # OpenAI Configuration
-    openai_api_key: str
-    azure_openai_endpoint: Optional[str] = None
-    azure_openai_key: Optional[str] = None
+    # Azure AI Configuration (replacing OpenAI)
+    azure_endpoint: str = "https://chgai.services.ai.azure.com/models"
+    azure_api_key: str = ""
+    azure_model_name: str = "Llama-3.2-90B-Vision-Instruct"
+    azure_api_version: str = "2024-05-01-preview"
     
     # Vector Database Configuration
-    vector_db_type: str = "chromadb"
-    chromadb_path: str = "./vector_db"
-    
-    # File Paths
-    models_dir: str = "./pdf_extract_kit_models"
-    upload_dir: str = "./uploads"
-    output_dir: str = "./processed"
-    
-    # Application Settings
-    log_level: str = "INFO"
-    max_file_size: int = 50 * 1024 * 1024  # 50MB
-    max_chunks_per_batch: int = 25
+    chroma_db_path: str = "./chroma_db"
     embedding_model: str = "all-MiniLM-L6-v2"
+    
+    # PDF Processing Configuration
+    upload_dir: str = "./uploads"
+    output_dir: str = "./outputs"
+    max_file_size: int = 50 * 1024 * 1024  # 50MB
     
     # MinerU Configuration
     device_mode: str = "cpu"  # Force CPU mode
@@ -38,23 +32,25 @@ class Settings(BaseSettings):
     image_enable: bool = True  # Enable image extraction
     
     # CPU Optimization Settings
-    force_cpu: bool = True  # Force all operations to use CPU
-    torch_device: str = "cpu"  # PyTorch device setting
+    force_cpu: bool = True
+    torch_device: str = "cpu"
+    
+    # Token Management
+    max_tokens: int = 4000
+    max_completion_tokens: int = 1500
+    max_context_tokens: int = 8000
+    
+    # Logging
+    log_level: str = "INFO"
     
     class Config:
         env_file = ".env"
-        case_sensitive = False
+        env_file_encoding = "utf-8"
 
-# Global settings instance
+# Create settings instance
 settings = Settings()
 
-# Force CPU usage for all operations
-os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Disable CUDA
-os.environ["TOKENIZERS_PARALLELISM"] = "false"  # Disable tokenizer parallelism
-os.environ["OMP_NUM_THREADS"] = "4"  # Limit OpenMP threads for CPU optimization
-
-# Ensure directories exist
-Path(settings.upload_dir).mkdir(exist_ok=True)
-Path(settings.output_dir).mkdir(exist_ok=True)
-Path(settings.models_dir).mkdir(exist_ok=True)
-Path(settings.chromadb_path).mkdir(exist_ok=True)
+# Force CPU mode globally
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["OMP_NUM_THREADS"] = "4"

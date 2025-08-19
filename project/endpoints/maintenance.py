@@ -56,7 +56,7 @@ async def generate_maintenance_schedule(pdf_name: str = Path(..., description="N
         
         # Generate maintenance schedule using LLM
         logger.info("Generating maintenance schedule with LLM...")
-        maintenance_tasks = await llm_service.generate_maintenance_schedule(all_chunks)
+        maintenance_tasks = llm_service.generate_maintenance_schedule(all_chunks)
         
         processing_time = calculate_processing_time(start_time)
         
