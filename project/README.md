@@ -62,6 +62,7 @@ A comprehensive backend API system that processes PDF manuals using MinerU, stor
 - `POST /upload-pdf` - Upload and process PDF files with MinerU extraction
 - `POST /query` - Query PDF content with intelligent responses and context
 - `GET /pdfs` - List all processed PDFs with pagination
+- `GET /images/{pdf_name}/{image_path}` - Serve images from vector database
 
 ### Generation Endpoints
 - `POST /generate-rules/{pdf_name}` - Generate IoT monitoring rules from PDF content

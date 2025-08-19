@@ -97,7 +97,12 @@ Context:
 
 User Query: {query}
 
-Please provide a comprehensive answer and then list the specific sections/headings you referenced."""
+Please provide a comprehensive answer and then list the specific sections/headings you referenced.
+
+IMPORTANT: At the end of your response, include a section called "REFERENCES:" and list ONLY the exact section headings you used to answer the query. For example:
+REFERENCES:
+- Section 1: Introduction
+- Section 3: Installation Guide"""
         
         # Truncate chunks to fit within token limit
         selected_chunks = self.truncate_chunks_to_fit_context(chunks, system_prompt, user_prompt_template)
@@ -163,23 +168,9 @@ Please provide a comprehensive answer and then list the specific sections/headin
             
             answer = response.choices[0].message.content
             
-            # Simple parsing to extract referenced sections
-            chunks_used = []
-            for chunk in chunks:
-                try:
-                    # Handle both possible chunk structures
-                    if "metadata" in chunk and "document" in chunk:
-                        # Vector DB format
-                        heading = chunk.get("metadata", {}).get("heading", "")
-                    else:
-                        # Fallback format
-                        heading = chunk.get("heading", "")
-                    
-                    if heading and heading.lower() in answer.lower():
-                        chunks_used.append(heading)
-                except Exception as e:
-                    logger.warning(f"Error extracting heading from chunk: {str(e)}")
-                    continue
+            # Parse referenced sections from LLM response
+            chunks_used = self._extract_referenced_sections(answer, chunks)
+            logger.info(f"LLM referenced {len(chunks_used)} sections: {chunks_used}")
             
             return {
                 "response": answer,
@@ -513,6 +504,58 @@ Focus on:
             logger.error(f"Error generating safety information: {str(e)}")
             raise e
     
+    def _extract_referenced_sections(self, answer: str, chunks: List[Dict[str, Any]]) -> List[str]:
+        """Extract referenced sections from LLM response"""
+        referenced_sections = []
+        
+        try:
+            # Look for REFERENCES section in the answer
+            if "REFERENCES:" in answer:
+                # Extract the REFERENCES section
+                ref_start = answer.find("REFERENCES:")
+                ref_section = answer[ref_start:]
+                
+                # Extract section headings from the references
+                lines = ref_section.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if line.startswith('-') or line.startswith('•'):
+                        # Remove bullet points and extract heading
+                        heading = line[1:].strip()
+                        if heading:
+                            referenced_sections.append(heading)
+                    elif ':' in line and not line.startswith('REFERENCES:'):
+                        # Handle format like "Section 1: Introduction"
+                        heading = line.strip()
+                        if heading:
+                            referenced_sections.append(heading)
+            
+            # If no explicit REFERENCES section, try to match headings in the answer
+            if not referenced_sections:
+                logger.warning("No explicit REFERENCES section found, falling back to text matching")
+                for chunk in chunks:
+                    try:
+                        # Handle both possible chunk structures
+                        if "metadata" in chunk and "document" in chunk:
+                            # Vector DB format
+                            heading = chunk.get("metadata", {}).get("heading", "")
+                        else:
+                            # Fallback format
+                            heading = chunk.get("heading", "")
+                        
+                        if heading and heading.lower() in answer.lower():
+                            referenced_sections.append(heading)
+                    except Exception as e:
+                        logger.warning(f"Error extracting heading from chunk: {str(e)}")
+                        continue
+            
+            logger.info(f"Extracted referenced sections: {referenced_sections}")
+            return referenced_sections
+            
+        except Exception as e:
+            logger.error(f"Error extracting referenced sections: {str(e)}")
+            return []
+
     def _parse_rules_from_text(self, text: str) -> List[Rule]:
         """Parse rules from plain text response"""
         rules = []

@@ -83,8 +83,15 @@ class StandardResponse(BaseModel):
     data: Optional[Dict[str, Any]] = None
     processing_time: Optional[str] = None
 
+class ImageData(BaseModel):
+    """Image data with metadata"""
+    filename: str
+    data: str  # Base64 encoded image data
+    mime_type: str
+    size: int
+
 class ChunkData(BaseModel):
     heading: str
     text: str
-    images: List[str]
+    images: List[ImageData]
     tables: List[str]

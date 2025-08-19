@@ -107,8 +107,8 @@ async def upload_pdf(file: UploadFile = File(...)):
         # Store in vector database
         logger.info(f"=== Storing in Vector Database ===")
         logger.info(f"Storing {len(chunks)} chunks in collection: {collection_name}")
-        chunks_stored = await vector_db.store_chunks(chunks, collection_name)
-        logger.info(f"Successfully stored {chunks_stored} chunks in vector database")
+        chunks_stored = await vector_db.store_chunks(chunks, collection_name, str(output_dir))
+        logger.info(f"Successfully stored {chunks_stored} chunks and images in vector database")
         
         # Cleanup uploaded file
         upload_path.unlink()

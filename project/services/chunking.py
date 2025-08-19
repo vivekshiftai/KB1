@@ -8,9 +8,11 @@ Version: 0.1
 import re
 import json
 import logging
+import base64
+import mimetypes
 from pathlib import Path
 from typing import List, Dict, Any
-from models.schemas import ChunkData
+from models.schemas import ChunkData, ImageData
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +21,42 @@ class MarkdownChunker:
         self.heading_pattern = re.compile(r"^#+\s+.*")  # Any heading with # followed by text
         self.image_pattern = re.compile(r"!\[.*?\]\((.*?)\)")
         self.table_pattern = re.compile(r"(<table>.*?</table>)", re.DOTALL | re.IGNORECASE)
+    
+    def _load_image_data(self, image_path: str, base_dir: Path) -> ImageData:
+        """Load image file and convert to base64"""
+        try:
+            # Resolve relative path from markdown file
+            if not Path(image_path).is_absolute():
+                full_image_path = base_dir / image_path
+            else:
+                full_image_path = Path(image_path)
+            
+            if not full_image_path.exists():
+                logger.warning(f"Image file not found: {full_image_path}")
+                return None
+            
+            # Read image file
+            with open(full_image_path, "rb") as f:
+                image_data = f.read()
+            
+            # Convert to base64
+            base64_data = base64.b64encode(image_data).decode('utf-8')
+            
+            # Determine MIME type
+            mime_type, _ = mimetypes.guess_type(str(full_image_path))
+            if not mime_type:
+                mime_type = "application/octet-stream"
+            
+            return ImageData(
+                filename=full_image_path.name,
+                data=base64_data,
+                mime_type=mime_type,
+                size=len(image_data)
+            )
+            
+        except Exception as e:
+            logger.error(f"Error loading image {image_path}: {str(e)}")
+            return None
     
     def chunk_markdown_with_headings(self, md_path: str) -> List[ChunkData]:
         """

@@ -59,6 +59,7 @@ class PDFProcessor:
             "models-dir": models_dir_abs,
             "formula-enable": settings.formula_enable,
             "table-enable": settings.table_enable,
+            "image-enable": settings.image_enable,
             "method": "auto"
         }
 

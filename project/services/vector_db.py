@@ -67,7 +67,7 @@ class VectorDatabase:
         logger.warning("Azure Vector Search not implemented, falling back to ChromaDB")
         return self._setup_chromadb_client()
     
-    async def store_chunks(self, chunks: List[ChunkData], collection_name: str) -> int:
+    async def store_chunks(self, chunks: List[ChunkData], collection_name: str, output_dir: str = None) -> int:
         """Store chunks in vector database"""
         logger.info(f"Storing {len(chunks)} chunks in collection: {collection_name}")
         
@@ -78,13 +78,33 @@ class VectorDatabase:
                 metadata={"created_at": datetime.now().isoformat()}
             )
             
+            # Store images if output_dir is provided
+            if output_dir:
+                await self._store_images(collection_name, output_dir)
+            
             # Prepare data for batch insertion
             ids = []
             embeddings = []
             metadatas = []
             documents = []
             
+            # Debug: Log chunk information
+            total_images = 0
+            total_tables = 0
+            
+            logger.info(f"Storing {len(chunks)} chunks with images and tables")
+            
             for i, chunk in enumerate(chunks):
+                # Log image and table information for each chunk
+                if chunk.images or chunk.tables:
+                    logger.info(f"Chunk {i} ('{chunk.heading}'): {len(chunk.images)} images, {len(chunk.tables)} tables")
+                    if chunk.images:
+                        logger.info(f"  Images: {chunk.images}")
+                    if chunk.tables:
+                        logger.info(f"  Tables: {chunk.tables}")
+                
+                total_images += len(chunk.images)
+                total_tables += len(chunk.tables)
                 # Create combined text for embedding
                 combined_text = f"{chunk.heading}\n{chunk.text}"
                 
@@ -115,11 +135,125 @@ class VectorDatabase:
             )
             
             logger.info(f"Successfully stored {len(chunks)} chunks")
+            logger.info(f"Total images stored: {total_images}")
+            logger.info(f"Total tables stored: {total_tables}")
             return len(chunks)
             
         except Exception as e:
             logger.error(f"Error storing chunks: {str(e)}")
             raise e
+    
+    async def _store_images(self, collection_name: str, output_dir: str):
+        """Store images from MinerU output in the collection"""
+        logger.info(f"Storing images from {output_dir} for collection {collection_name}")
+        
+        try:
+            import base64
+            from pathlib import Path
+            
+            # Find all image files in the output directory
+            image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.bmp', '.tiff']
+            image_files = []
+            
+            for ext in image_extensions:
+                image_files.extend(Path(output_dir).glob(f"**/*{ext}"))
+                image_files.extend(Path(output_dir).glob(f"**/*{ext.upper()}"))
+            
+            logger.info(f"Found {len(image_files)} image files in {output_dir}")
+            
+            # Store each image in the collection
+            for image_file in image_files:
+                try:
+                    # Read image file and encode as base64
+                    with open(image_file, "rb") as f:
+                        image_data = f.read()
+                        image_base64 = base64.b64encode(image_data).decode('utf-8')
+                    
+                    # Get relative path from output_dir for consistent naming
+                    relative_path = str(image_file.relative_to(Path(output_dir)))
+                    
+                    # Store image metadata
+                    image_metadata = {
+                        "type": "image",
+                        "filename": image_file.name,
+                        "path": relative_path,
+                        "size": len(image_data),
+                        "format": image_file.suffix.lower(),
+                        "collection": collection_name,
+                        "created_at": datetime.now().isoformat()
+                    }
+                    
+                    # Store in a separate images collection
+                    images_collection_name = f"{collection_name}_images"
+                    images_collection = self.client.get_or_create_collection(
+                        name=images_collection_name,
+                        metadata={"created_at": datetime.now().isoformat()}
+                    )
+                    
+                    # Store image with base64 data
+                    images_collection.add(
+                        ids=[f"img_{relative_path}"],
+                        documents=[image_base64],
+                        metadatas=[image_metadata]
+                    )
+                    
+                    logger.info(f"Stored image: {relative_path} ({len(image_data)} bytes)")
+                    
+                except Exception as e:
+                    logger.error(f"Error storing image {image_file}: {str(e)}")
+                    continue
+            
+            logger.info(f"Successfully stored {len(image_files)} images for collection {collection_name}")
+            
+        except Exception as e:
+            logger.error(f"Error in image storage: {str(e)}")
+            raise e
+    
+    async def get_image(self, collection_name: str, image_path: str) -> Optional[Dict[str, Any]]:
+        """Retrieve image data by path from the collection"""
+        logger.info(f"Retrieving image {image_path} from collection {collection_name}")
+        
+        try:
+            # Get images collection
+            images_collection_name = f"{collection_name}_images"
+            images_collection = self.client.get_collection(name=images_collection_name)
+            
+            # Query for the specific image
+            results = images_collection.query(
+                query_texts=["image"],  # Dummy query to get all images
+                n_results=1000,  # Get all images
+                include=["documents", "metadatas"]
+            )
+            
+            # Find the image by path
+            for i, metadata in enumerate(results["metadatas"][0]):
+                if metadata.get("path") == image_path:
+                    image_data = results["documents"][0][i]
+                    return {
+                        "data": image_data,  # Base64 encoded image
+                        "metadata": metadata,
+                        "content_type": self._get_content_type(metadata.get("format", ""))
+                    }
+            
+            logger.warning(f"Image {image_path} not found in collection {collection_name}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error retrieving image {image_path}: {str(e)}")
+            return None
+    
+    def _get_content_type(self, file_extension: str) -> str:
+        """Get MIME content type from file extension"""
+        content_types = {
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.svg': 'image/svg+xml',
+            '.bmp': 'image/bmp',
+            '.tiff': 'image/tiff'
+        }
+        return content_types.get(file_extension.lower(), 'application/octet-stream')
     
     async def query_chunks(self, collection_name: str, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """Query chunks from vector database"""
@@ -141,15 +275,37 @@ class VectorDatabase:
             
             # Format results
             formatted_results = []
+            total_images = 0
+            total_tables = 0
+            
             for i in range(len(results["documents"][0])):
+                # Parse images and tables from metadata
+                images = json.loads(results["metadatas"][0][i].get("images", "[]"))
+                tables = json.loads(results["metadatas"][0][i].get("tables", "[]"))
+                
+                # Log image and table information
+                if images or tables:
+                    heading = results["metadatas"][0][i].get("heading", f"Chunk {i}")
+                    logger.info(f"Result {i} ('{heading}'): {len(images)} images, {len(tables)} tables")
+                    if images:
+                        logger.info(f"  Images: {images}")
+                    if tables:
+                        logger.info(f"  Tables: {tables}")
+                
+                total_images += len(images)
+                total_tables += len(tables)
+                
                 result = {
                     "document": results["documents"][0][i],
                     "metadata": results["metadatas"][0][i],
                     "distance": results["distances"][0][i],
-                    "images": json.loads(results["metadatas"][0][i].get("images", "[]")),
-                    "tables": json.loads(results["metadatas"][0][i].get("tables", "[]"))
+                    "images": images,
+                    "tables": tables
                 }
                 formatted_results.append(result)
+            
+            logger.info(f"Total images in results: {total_images}")
+            logger.info(f"Total tables in results: {total_tables}")
             
             logger.info(f"Retrieved {len(formatted_results)} results")
             return formatted_results

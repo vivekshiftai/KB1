@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     device_mode: str = "cpu"  # Force CPU mode
     formula_enable: bool = True
     table_enable: bool = True
+    image_enable: bool = True  # Enable image extraction
     
     # CPU Optimization Settings
     force_cpu: bool = True  # Force all operations to use CPU

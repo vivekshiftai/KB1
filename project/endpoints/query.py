@@ -77,17 +77,66 @@ async def query_pdf(request: QueryRequest):
                 detail=f"Failed to generate response: {str(e)}"
             )
         
-        # Collect all images and tables from used chunks
+        # Collect images and tables only from chunks that were used by the LLM
         all_images = []
         all_tables = []
         
+        logger.info(f"LLM used chunks: {llm_result['chunks_used']}")
+        logger.info(f"Total chunks available: {len(chunks)}")
+        
+        # Find chunks that were actually used by the LLM
+        used_chunks = []
         for chunk in chunks:
-            all_images.extend(chunk.get("images", []))
-            all_tables.extend(chunk.get("tables", []))
+            try:
+                # Handle both possible chunk structures
+                if "metadata" in chunk and "document" in chunk:
+                    # Vector DB format
+                    heading = chunk.get("metadata", {}).get("heading", "")
+                else:
+                    # Fallback format
+                    heading = chunk.get("heading", "")
+                
+                # Check if this chunk's heading is in the LLM's referenced sections
+                if heading in llm_result['chunks_used']:
+                    used_chunks.append(chunk)
+                    logger.info(f"Found used chunk: '{heading}' with {len(chunk.get('images', []))} images, {len(chunk.get('tables', []))} tables")
+            except Exception as e:
+                logger.warning(f"Error processing chunk for image collection: {str(e)}")
+                continue
+        
+        logger.info(f"Found {len(used_chunks)} chunks that were actually used by the LLM")
+        
+        # Collect images and tables only from used chunks
+        for i, chunk in enumerate(used_chunks):
+            chunk_images = chunk.get("images", [])
+            chunk_tables = chunk.get("tables", [])
+            
+            logger.info(f"Used chunk {i}: {len(chunk_images)} images, {len(chunk_tables)} tables")
+            if chunk_images:
+                logger.info(f"Used chunk {i} images: {chunk_images}")
+            if chunk_tables:
+                logger.info(f"Used chunk {i} tables: {chunk_tables}")
+            
+            all_images.extend(chunk_images)
+            all_tables.extend(chunk_tables)
         
         # Remove duplicates
         all_images = list(set(all_images))
         all_tables = list(set(all_tables))
+        
+        # Convert image paths to URLs
+        image_urls = []
+        for image_path in all_images:
+            # Create URL for image serving endpoint
+            image_url = f"/images/{request.pdf_name}/{image_path}"
+            image_urls.append(image_url)
+        
+        logger.info(f"Total unique images from used chunks: {len(all_images)}")
+        logger.info(f"Total unique tables from used chunks: {len(all_tables)}")
+        if image_urls:
+            logger.info(f"Image URLs: {image_urls}")
+        if all_tables:
+            logger.info(f"Tables from used chunks: {all_tables}")
         
         processing_time = calculate_processing_time(start_time)
         
@@ -98,7 +147,7 @@ async def query_pdf(request: QueryRequest):
             message="Query processed successfully",
             response=llm_result["response"],
             chunks_used=llm_result["chunks_used"],
-            images=all_images,
+            images=image_urls,
             tables=all_tables,
             processing_time=processing_time
         )
