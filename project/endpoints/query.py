@@ -56,11 +56,30 @@ async def query_pdf(request: QueryRequest):
         else:
             logger.warning("No chunks retrieved from vector database")
         
+        # If no chunks found, try to get some general content from the PDF
         if not chunks:
-            raise HTTPException(
-                status_code=404,
-                detail="No relevant content found for the query"
-            )
+            logger.warning("No relevant chunks found, trying to get general content...")
+            try:
+                # Try to get some general chunks without specific query
+                chunks = await vector_db.query_chunks(
+                    collection_name=collection_name,
+                    query="",  # Empty query to get general content
+                    top_k=3
+                )
+                if chunks:
+                    logger.info(f"Retrieved {len(chunks)} general chunks as fallback")
+                else:
+                    logger.error("No content available in the PDF")
+                    raise HTTPException(
+                        status_code=404,
+                        detail="No content found in the PDF. Please ensure the PDF was uploaded and processed correctly."
+                    )
+            except Exception as e:
+                logger.error(f"Error getting fallback chunks: {str(e)}")
+                raise HTTPException(
+                    status_code=404,
+                    detail="No relevant content found for the query and no fallback content available."
+                )
         
         # Generate response using LLM
         logger.info("Generating response with LLM...")
@@ -86,7 +105,7 @@ async def query_pdf(request: QueryRequest):
         
         # Find chunks that were actually used by the LLM
         used_chunks = []
-        for chunk in chunks:
+        for i, chunk in enumerate(chunks):
             try:
                 # Handle both possible chunk structures
                 if "metadata" in chunk and "document" in chunk:
@@ -100,7 +119,16 @@ async def query_pdf(request: QueryRequest):
                 # Use case-insensitive matching for better reliability
                 chunk_used = False
                 for referenced_heading in llm_result['chunks_used']:
-                    if heading.lower() == referenced_heading.lower() or heading.lower() in referenced_heading.lower() or referenced_heading.lower() in heading.lower():
+                    # Check for exact heading match
+                    if heading.lower() == referenced_heading.lower():
+                        chunk_used = True
+                        break
+                    # Check for partial heading match
+                    elif heading.lower() in referenced_heading.lower() or referenced_heading.lower() in heading.lower():
+                        chunk_used = True
+                        break
+                    # Check for chunk index match (e.g., "Chunk 1", "Chunk 2")
+                    elif referenced_heading.lower() == f"chunk {i+1}":
                         chunk_used = True
                         break
                 
@@ -112,6 +140,13 @@ async def query_pdf(request: QueryRequest):
                 continue
         
         logger.info(f"Found {len(used_chunks)} chunks that were actually used by the LLM")
+        
+        # If no chunks were matched by LLM, use all available chunks (fallback)
+        if not used_chunks and chunks:
+            logger.warning("No chunks matched by LLM, using all available chunks as fallback")
+            used_chunks = chunks
+            # Update the LLM result to reflect that all chunks were used
+            llm_result['chunks_used'] = [f"Chunk {i+1}" for i in range(len(chunks))]
         
         # Collect images and tables only from used chunks
         for i, chunk in enumerate(used_chunks):

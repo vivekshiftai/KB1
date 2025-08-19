@@ -184,6 +184,8 @@ class LLMService:
         if chunks:
             logger.info(f"First chunk keys: {list(chunks[0].keys())}")
             logger.info(f"First chunk metadata keys: {list(chunks[0].get('metadata', {}).keys())}")
+        else:
+            logger.warning("No chunks provided for context")
         
         # System prompt
         system_prompt = "You are a technical documentation assistant. Provide accurate, detailed answers based on the provided manual sections."
@@ -198,65 +200,73 @@ Query: {query}
 
 Provide a clear answer. At the end, add "REFERENCES:" followed by the exact section headings you used."""
         
-        # Truncate chunks to fit within token limit
-        selected_chunks = self.truncate_chunks_to_fit_context(chunks, system_prompt, user_prompt_template)
-        
-        if not selected_chunks:
-            logger.error("No chunks could fit within token limit")
-            logger.error(f"Total chunks received: {len(chunks)}")
-            if chunks:
-                first_chunk = chunks[0]
-                if "metadata" in first_chunk and "document" in first_chunk:
-                    first_chunk_tokens = self.count_tokens(first_chunk.get("document", ""))
-                else:
-                    first_chunk_tokens = self.count_tokens(first_chunk.get("text", ""))
-                logger.error(f"First chunk tokens: {first_chunk_tokens}")
+        # If no chunks available, provide a helpful response
+        if not chunks:
+            logger.warning("No chunks available, providing general response")
+            system_prompt = "You are a helpful technical assistant. Provide a general response when specific documentation is not available."
+            user_prompt = f"""The user asked: {query}
+
+Unfortunately, I don't have access to specific documentation content at the moment. Please provide a helpful general response about this topic.
+
+Provide a clear answer. At the end, add "REFERENCES: General knowledge"."""
+        else:
+            # Truncate chunks to fit within token limit
+            selected_chunks = self.truncate_chunks_to_fit_context(chunks, system_prompt, user_prompt_template)
             
-            return {
-                "response": "I apologize, but the content is too large to process. Please try a more specific query or upload a smaller document.",
-                "chunks_used": []
-            }
-        
-        # Prepare context from selected chunks
-        context_parts = []
-        for i, chunk in enumerate(selected_chunks):
-            try:
-                # Handle both possible chunk structures
-                if "metadata" in chunk and "document" in chunk:
-                    # Vector DB format
-                    heading = chunk.get("metadata", {}).get("heading", f"Section {i+1}")
-                    content = chunk.get("document", "")
+            if not selected_chunks:
+                logger.warning("No chunks could fit within token limit, using first chunk with heavy truncation")
+                if chunks:
+                    # Use the first chunk with heavy truncation
+                    first_chunk = chunks[0]
+                    if "metadata" in first_chunk and "document" in first_chunk:
+                        heading = first_chunk.get("metadata", {}).get("heading", "General Information")
+                        content = first_chunk.get("document", "")[:1000] + " [Content truncated]"
+                    else:
+                        heading = first_chunk.get("heading", "General Information")
+                        content = first_chunk.get("text", first_chunk.get("content", ""))[:1000] + " [Content truncated]"
+                    
+                    context = f"**{heading}**\n{content}"
                 else:
-                    # Fallback format
-                    heading = chunk.get("heading", f"Section {i+1}")
-                    content = chunk.get("text", chunk.get("content", ""))
+                    context = "No specific content available."
+                    logger.warning("No chunks available for context")
+            else:
+                # Prepare context from selected chunks
+                context_parts = []
+                for i, chunk in enumerate(selected_chunks):
+                    try:
+                        # Handle both possible chunk structures
+                        if "metadata" in chunk and "document" in chunk:
+                            # Vector DB format
+                            heading = chunk.get("metadata", {}).get("heading", f"Section {i+1}")
+                            content = chunk.get("document", "")
+                        else:
+                            # Fallback format
+                            heading = chunk.get("heading", f"Section {i+1}")
+                            content = chunk.get("text", chunk.get("content", ""))
+                        
+                        if content:
+                            context_parts.append(f"**{heading}**\n{content}")
+                    except Exception as e:
+                        logger.warning(f"Error processing chunk {i}: {str(e)}")
+                        continue
                 
-                if content:
-                    context_parts.append(f"**{heading}**\n{content}")
+                if not context_parts:
+                    logger.warning("No valid context could be extracted from chunks")
+                    context = "No specific content available."
+                else:
+                    context = "\n\n".join(context_parts)
+            
+            # Format the user prompt with context
+            try:
+                user_prompt = user_prompt_template.format(context=context, query=query)
+            except KeyError as e:
+                logger.error(f"Error formatting user prompt - missing placeholder: {str(e)}")
+                # Fallback to simple prompt
+                user_prompt = f"Please answer this query based on the following context:\n\n{context}\n\nQuery: {query}"
             except Exception as e:
-                logger.warning(f"Error processing chunk {i}: {str(e)}")
-                continue
-        
-        if not context_parts:
-            logger.warning("No valid context could be extracted from chunks")
-            return {
-                "response": "I apologize, but I couldn't extract meaningful content from the document. Please try a different query or upload a different document.",
-                "chunks_used": []
-            }
-        
-        context = "\n\n".join(context_parts)
-        
-        # Format the user prompt with context
-        try:
-            user_prompt = user_prompt_template.format(context=context, query=query)
-        except KeyError as e:
-            logger.error(f"Error formatting user prompt - missing placeholder: {str(e)}")
-            # Fallback to simple prompt
-            user_prompt = f"Please answer this query based on the following context:\n\n{context}\n\nQuery: {query}"
-        except Exception as e:
-            logger.error(f"Error formatting user prompt: {str(e)}")
-            # Fallback to simple prompt
-            user_prompt = f"Please answer this query based on the following context:\n\n{context}\n\nQuery: {query}"
+                logger.error(f"Error formatting user prompt: {str(e)}")
+                # Fallback to simple prompt
+                user_prompt = f"Please answer this query based on the following context:\n\n{context}\n\nQuery: {query}"
         
         try:
             response = self.client.complete(
@@ -652,7 +662,7 @@ Focus on:
             
             # If no explicit REFERENCES section, try to match headings in the answer
             if not referenced_sections:
-                logger.warning("No explicit REFERENCES section found, falling back to text matching")
+                logger.warning("No explicit REFERENCES section found, trying text matching")
                 for chunk in chunks:
                     try:
                         # Handle both possible chunk structures
@@ -686,24 +696,21 @@ Focus on:
                         logger.warning(f"Error getting heading from chunk: {str(e)}")
                         continue
             
+            # If still no references, use chunk indices as fallback
+            if not referenced_sections:
+                logger.warning("No headings found, using chunk indices as fallback")
+                for i, chunk in enumerate(chunks):
+                    referenced_sections.append(f"Chunk {i+1}")
+            
             logger.info(f"Final extracted referenced sections: {referenced_sections}")
             return referenced_sections
             
         except Exception as e:
             logger.error(f"Error extracting referenced sections: {str(e)}")
-            # Fallback: return all chunk headings
+            # Fallback: return chunk indices
             fallback_sections = []
-            for chunk in chunks:
-                try:
-                    if "metadata" in chunk and "document" in chunk:
-                        heading = chunk.get("metadata", {}).get("heading", "")
-                    else:
-                        heading = chunk.get("heading", "")
-                    
-                    if heading:
-                        fallback_sections.append(heading)
-                except Exception:
-                    continue
+            for i, chunk in enumerate(chunks):
+                fallback_sections.append(f"Chunk {i+1}")
             
             logger.info(f"Using fallback sections: {fallback_sections}")
             return fallback_sections
