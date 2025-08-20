@@ -218,7 +218,27 @@ class VectorDatabase:
             images_collection_name = f"{collection_name}_images"
             images_collection = self.client.get_collection(name=images_collection_name)
             
-            # Query for the specific image
+            # Try to get image directly by ID first (more efficient)
+            image_id = f"img_{image_path}"
+            try:
+                results = images_collection.get(
+                    ids=[image_id],
+                    include=["documents", "metadatas"]
+                )
+                
+                if results["ids"] and len(results["ids"]) > 0:
+                    image_data = results["documents"][0]
+                    metadata = results["metadatas"][0]
+                    
+                    return {
+                        "data": image_data,  # Base64 encoded image
+                        "metadata": metadata,
+                        "content_type": self._get_content_type(metadata.get("format", ""))
+                    }
+            except Exception as e:
+                logger.debug(f"Direct lookup failed for {image_id}, trying query method: {str(e)}")
+            
+            # Fallback: Query for the specific image by path
             results = images_collection.query(
                 query_texts=["image"],  # Dummy query to get all images
                 n_results=1000,  # Get all images
