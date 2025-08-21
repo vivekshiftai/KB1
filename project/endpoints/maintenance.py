@@ -39,24 +39,68 @@ async def generate_maintenance_schedule(pdf_name: str = Path(..., description="N
                 detail=f"PDF '{pdf_name}' not found. Please upload the PDF first."
             )
         
-        # Get chunks from vector database
-        logger.info("Retrieving chunks from vector database...")
-        all_chunks = await vector_db.get_all_chunks(
-            collection_name=collection_name,
-            limit=settings.max_chunks_per_batch
-        )
+        # Get chunks from vector database with smart filtering for maintenance content
+        logger.info("Retrieving maintenance-relevant chunks from vector database...")
         
-        if not all_chunks:
+        # Define maintenance-related keywords for smart filtering
+        maintenance_keywords = [
+            "maintenance", "service", "inspection", "check", "clean", "lubricate", "calibrate",
+            "replace", "repair", "adjust", "tighten", "monitor", "test", "verify", "examine",
+            "schedule", "routine", "preventive", "periodic", "daily", "weekly", "monthly", "annual",
+            "filter", "oil", "grease", "bearing", "belt", "motor", "pump", "valve", "sensor",
+            "temperature", "pressure", "vibration", "noise", "wear", "damage", "failure",
+            "safety", "warning", "caution", "procedure", "instruction", "manual", "guide"
+        ]
+        
+        # Query for maintenance-relevant chunks using keywords
+        maintenance_chunks = []
+        for keyword in maintenance_keywords[:10]:  # Use top 10 keywords to avoid too many queries
+            try:
+                keyword_chunks = await vector_db.query_chunks(
+                    collection_name=collection_name,
+                    query=keyword,
+                    top_k=5
+                )
+                maintenance_chunks.extend(keyword_chunks)
+                logger.info(f"Found {len(keyword_chunks)} chunks for keyword: {keyword}")
+            except Exception as e:
+                logger.warning(f"Error querying for keyword '{keyword}': {str(e)}")
+                continue
+        
+        # Remove duplicates and get top 15 most relevant chunks
+        unique_chunks = []
+        seen_chunks = set()
+        for chunk in maintenance_chunks:
+            chunk_id = chunk.get("metadata", {}).get("chunk_index", "")
+            if chunk_id not in seen_chunks:
+                unique_chunks.append(chunk)
+                seen_chunks.add(chunk_id)
+        
+        # Sort by relevance (lower distance = higher relevance) and take top 15
+        unique_chunks.sort(key=lambda x: x.get("distance", 1.0))
+        top_maintenance_chunks = unique_chunks[:15]
+        
+        logger.info(f"Found {len(top_maintenance_chunks)} unique maintenance-relevant chunks out of {len(maintenance_chunks)} total chunks")
+        
+        if not top_maintenance_chunks:
+            logger.warning("No maintenance-relevant chunks found, falling back to general chunks")
+            # Fallback to general chunks if no maintenance-specific content found
+            top_maintenance_chunks = await vector_db.get_all_chunks(
+                collection_name=collection_name,
+                limit=10
+            )
+        
+        if not top_maintenance_chunks:
             raise HTTPException(
                 status_code=404,
                 detail="No content found in PDF"
             )
         
-        logger.info(f"Processing {len(all_chunks)} chunks for maintenance schedule generation")
+        logger.info(f"Processing {len(top_maintenance_chunks)} chunks for maintenance schedule generation")
         
-        # Generate maintenance schedule using LLM
+        # Generate maintenance schedule using LLM with enhanced prompt
         logger.info("Generating maintenance schedule with LLM...")
-        maintenance_tasks = await llm_service.generate_maintenance_schedule(all_chunks)
+        maintenance_tasks = await llm_service.generate_maintenance_schedule(top_maintenance_chunks)
         
         processing_time = calculate_processing_time(start_time)
         

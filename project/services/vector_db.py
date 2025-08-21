@@ -15,6 +15,7 @@ from sentence_transformers import SentenceTransformer
 from datetime import datetime
 from config import settings
 from models.schemas import ChunkData, PDFListItem
+from utils.helpers import sanitize_filename
 
 logger = logging.getLogger(__name__)
 
@@ -497,3 +498,45 @@ class VectorDatabase:
         except Exception as e:
             logger.error(f"Error getting collection type for {collection_name}: {str(e)}")
             return "unknown"
+    
+    async def delete_pdf_collections(self, pdf_name: str) -> bool:
+        """Delete both document and image collections for a PDF"""
+        logger.info(f"Deleting collections for PDF: {pdf_name}")
+        
+        try:
+            # Generate collection name using the same pattern as upload
+            collection_name = sanitize_filename(pdf_name)
+            images_collection_name = f"{collection_name}_images"
+            
+            deleted_collections = []
+            
+            # Delete document collection
+            if self.collection_exists(collection_name):
+                try:
+                    self.client.delete_collection(name=collection_name)
+                    deleted_collections.append(collection_name)
+                    logger.info(f"Deleted document collection: {collection_name}")
+                except Exception as e:
+                    logger.error(f"Error deleting document collection {collection_name}: {str(e)}")
+                    raise e
+            else:
+                logger.warning(f"Document collection {collection_name} does not exist")
+            
+            # Delete images collection
+            if self.collection_exists(images_collection_name):
+                try:
+                    self.client.delete_collection(name=images_collection_name)
+                    deleted_collections.append(images_collection_name)
+                    logger.info(f"Deleted images collection: {images_collection_name}")
+                except Exception as e:
+                    logger.error(f"Error deleting images collection {images_collection_name}: {str(e)}")
+                    raise e
+            else:
+                logger.warning(f"Images collection {images_collection_name} does not exist")
+            
+            logger.info(f"Successfully deleted {len(deleted_collections)} collections: {deleted_collections}")
+            return len(deleted_collections) > 0
+            
+        except Exception as e:
+            logger.error(f"Error deleting PDF collections: {str(e)}")
+            raise e

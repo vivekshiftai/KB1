@@ -8,7 +8,7 @@ Version: 0.1
 import logging
 from fastapi import APIRouter, HTTPException, Query
 from services.vector_db import VectorDatabase
-from models.schemas import PDFListResponse
+from models.schemas import PDFListResponse, PDFDeleteResponse
 
 router = APIRouter(prefix="/pdfs", tags=["pdfs"])
 logger = logging.getLogger(__name__)
@@ -47,6 +47,37 @@ async def list_pdfs(
     except Exception as e:
         logger.error(f"Error listing PDFs: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to list PDFs: {str(e)}")
+
+@router.delete("/{pdf_name}", response_model=PDFDeleteResponse)
+async def delete_pdf(pdf_name: str):
+    """Delete PDF and all its data from the database"""
+    logger.info(f"Deleting PDF: {pdf_name}")
+    
+    try:
+        # Initialize vector database
+        vector_db = VectorDatabase()
+        
+        # Delete both document and image collections
+        success = await vector_db.delete_pdf_collections(pdf_name)
+        
+        if success:
+            logger.info(f"Successfully deleted PDF: {pdf_name}")
+            return PDFDeleteResponse(
+                success=True,
+                message=f"PDF '{pdf_name}' and all its data have been deleted successfully",
+                pdf_name=pdf_name
+            )
+        else:
+            logger.warning(f"No collections found to delete for PDF: {pdf_name}")
+            return PDFDeleteResponse(
+                success=True,
+                message=f"No data found for PDF '{pdf_name}' to delete",
+                pdf_name=pdf_name
+            )
+        
+    except Exception as e:
+        logger.error(f"Error deleting PDF {pdf_name}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete PDF: {str(e)}")
 
 @router.get("/health")
 async def health_check():

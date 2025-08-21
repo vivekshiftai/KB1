@@ -339,34 +339,52 @@ Provide a clear answer. At the end, add "REFERENCES: General knowledge"."""
         logger.info(f"Generating rules from {len(chunks)} chunks")
         
         # System prompt
-        system_prompt = "You are an IoT systems engineer specializing in industrial monitoring rules. Generate practical, actionable monitoring rules based on technical documentation."
+        system_prompt = """You are a senior IoT systems engineer with 15+ years of experience in industrial automation and monitoring systems.
+You specialize in creating precise, actionable IoT monitoring rules from technical documentation.
+Your expertise includes sensor networks, threshold monitoring, predictive analytics, and automated response systems.
+You understand the critical importance of accurate thresholds and clear consequences for equipment reliability and safety."""
         
-        # User prompt template
-        user_prompt_template = """Analyze these technical manual sections and generate IoT monitoring rules. 
-Focus on operational parameters, thresholds, and automated responses. 
-Format as structured rules with conditions and actions.
-Avoid safety procedures - focus on operational monitoring.
+        # User prompt template with detailed requirements
+        user_prompt_template = """Analyze the provided technical documentation sections and extract specific IoT monitoring rules.
 
 Context:
 {context}
 
-Please generate rules in JSON format with the following structure:
+Please generate detailed IoT monitoring rules in JSON format with the following structure:
 [
   {{
-    "condition": "Temperature > 30°C",
-    "action": "Send notification to operator",
-    "category": "temperature_monitoring",
-    "priority": "medium"
+    "rule_name": "High Temperature Alert",
+    "threshold": "Temperature > 85°C",
+    "metric": "temperature",
+    "metric_value": "85°C",
+    "description": "Monitor equipment temperature to prevent overheating and thermal damage",
+    "consequence": "Equipment shutdown, thermal damage, reduced lifespan, safety hazard"
   }}
 ]
 
-Focus on:
-- Temperature thresholds
-- Pressure limits
-- Operational parameters
+IMPORTANT REQUIREMENTS:
+1. **Rule Name**: Be specific and descriptive (e.g., "High Temperature Alert" not just "Temperature Rule")
+2. **Threshold**: Use exact numerical values with units (e.g., "Temperature > 85°C", "Pressure < 50 PSI")
+3. **Metric**: The specific parameter being monitored (temperature, pressure, vibration, speed, flow, level, voltage, current, etc.)
+4. **Metric Value**: The exact numerical threshold value with units
+5. **Description**: Clear explanation of what this rule monitors and why it's important
+6. **Consequence**: What happens if the rule is exceeded (equipment damage, safety issues, performance degradation, etc.)
+
+Focus on extracting:
+- Temperature monitoring thresholds
+- Pressure limits and ranges
+- Vibration and speed parameters
+- Flow and level measurements
+- Electrical parameters (voltage, current)
 - Performance indicators
-- Maintenance triggers
-- System status monitoring"""
+- Operational status conditions
+- Equipment health metrics
+
+Ensure all rules are:
+- Based on actual numerical values from the documentation
+- Practical and implementable in IoT systems
+- Clear about consequences when exceeded
+- Specific to the equipment or system being monitored"""
         
         # Truncate chunks to fit within token limit
         selected_chunks = self.truncate_chunks_to_fit_context(chunks, system_prompt, user_prompt_template)
@@ -452,33 +470,59 @@ Focus on:
         logger.info(f"Generating maintenance schedule from {len(chunks)} chunks")
         
         # System prompt
-        system_prompt = "You are a maintenance engineer specializing in industrial equipment maintenance schedules. Extract and structure maintenance tasks from technical documentation."
+        system_prompt = """You are a senior maintenance engineer with 20+ years of experience in industrial equipment maintenance. 
+You specialize in creating comprehensive, detailed maintenance schedules from technical documentation.
+Your expertise includes preventive maintenance, predictive maintenance, and equipment reliability optimization.
+You understand the critical importance of proper maintenance procedures for equipment safety and performance."""
         
-        # User prompt template
-        user_prompt_template = """Extract maintenance schedules from these manual sections. 
-Identify daily, weekly, monthly, and periodic maintenance tasks.
-Return structured data with task descriptions and frequencies.
+        # User prompt template with detailed requirements
+        user_prompt_template = """Analyze the provided technical documentation sections and extract comprehensive maintenance information.
 
 Context:
 {context}
 
-Please generate maintenance tasks in JSON format with the following structure:
+Please generate detailed maintenance tasks in JSON format with the following structure:
 [
   {{
-    "task": "Check oil level",
+    "task": "Check hydraulic oil level in main reservoir",
     "frequency": "daily",
     "category": "lubrication",
-    "description": "Verify oil level is within acceptable range"
+    "description": "Verify hydraulic oil level is between MIN and MAX marks on sight glass. Top up if necessary using approved hydraulic oil grade.",
+    "priority": "high",
+    "estimated_duration": "5 minutes",
+    "required_tools": "oil level gauge, approved hydraulic oil",
+    "safety_notes": "Ensure equipment is stopped and depressurized before checking oil level"
   }}
 ]
 
-Focus on:
-- Preventive maintenance tasks
-- Inspection procedures
-- Cleaning and lubrication
-- Calibration requirements
-- Safety checks
-- Performance monitoring"""
+IMPORTANT REQUIREMENTS:
+1. **Task Name**: Be specific and descriptive (e.g., "Check hydraulic oil level" not just "Check oil")
+2. **Frequency**: Use specific intervals (daily, weekly, monthly, quarterly, semi-annually, annually, as-needed)
+3. **Category**: Choose from: lubrication, inspection, cleaning, calibration, safety, performance, electrical, mechanical, preventive, predictive
+4. **Description**: Provide detailed step-by-step instructions including:
+   - What to check/inspect
+   - How to perform the task
+   - What to look for (acceptable ranges, signs of wear, etc.)
+   - What actions to take if issues are found
+5. **Priority**: high, medium, or low based on:
+   - Safety implications
+   - Equipment criticality
+   - Impact on production
+6. **Estimated Duration**: Realistic time estimate for the task
+7. **Required Tools**: List specific tools, equipment, or materials needed
+8. **Safety Notes**: Any safety precautions, PPE requirements, or warnings
+
+Focus on extracting:
+- Preventive maintenance procedures
+- Inspection and monitoring tasks
+- Cleaning and housekeeping activities
+- Lubrication requirements
+- Calibration and adjustment procedures
+- Safety checks and procedures
+- Performance monitoring tasks
+- Equipment-specific maintenance requirements
+
+Ensure all tasks are practical, actionable, and based on the actual content in the provided documentation."""
         
         # Truncate chunks to fit within token limit
         selected_chunks = self.truncate_chunks_to_fit_context(chunks, system_prompt, user_prompt_template)
@@ -562,109 +606,140 @@ Focus on:
         logger.info(f"Generating safety information from {len(chunks)} chunks")
         
         # System prompt
-        system_prompt = "You are a safety engineer specializing in industrial equipment safety. Extract comprehensive safety information from technical documentation."
+        system_prompt = """You are a senior safety engineer with 20+ years of experience in industrial safety and risk management.
+You specialize in identifying, analyzing, and providing comprehensive safety solutions for industrial equipment and machinery.
+Your expertise includes hazard identification, risk assessment, safety procedures, emergency response, and compliance with safety standards.
+You understand the critical importance of preventing accidents and protecting workers from machine-related hazards."""
         
-        # User prompt template
-        user_prompt_template = """Extract safety procedures and warnings from these manual sections.
-Generate comprehensive safety guidelines categorized by type.
+        # User prompt template with detailed requirements
+        user_prompt_template = """Analyze the provided technical documentation sections and extract comprehensive safety information.
 
 Context:
 {context}
 
-Please generate safety information in JSON format with the following structure:
+Please generate detailed safety information in JSON format with the following structure:
 [
   {{
-    "type": "warning",
-    "title": "High Temperature Warning",
-    "description": "Equipment surfaces may reach temperatures exceeding 80°C during operation",
-    "category": "thermal_hazard"
+    "name": "High Temperature Hazard",
+    "about_reaction": "Equipment surfaces can reach dangerously high temperatures during operation",
+    "causes": "Continuous operation, lack of cooling, mechanical friction, electrical resistance",
+    "how_to_avoid": "Monitor temperature sensors, ensure proper ventilation, follow operating procedures, use thermal protection",
+    "safety_info": "Wear heat-resistant PPE, maintain safe distance, implement temperature monitoring, establish emergency shutdown procedures"
   }}
 ]
 
-Focus on:
-- Warnings and cautions
-- Safety procedures
-- Emergency procedures
-- Personal protective equipment
-- Hazard identification
-- Risk mitigation"""
+IMPORTANT REQUIREMENTS:
+1. **Name**: Specific hazard or safety concern (e.g., "High Temperature Hazard" not just "Temperature Warning")
+2. **About Reaction**: What happens when this hazard occurs or what the danger is
+3. **Causes**: What leads to this safety issue (mechanical, electrical, operational, environmental factors)
+4. **How to Avoid**: Specific preventive measures and safety procedures to prevent the hazard
+5. **Safety Info**: Additional safety information including PPE requirements, emergency procedures, and safety protocols
+
+Focus on extracting:
+- Machine operation hazards
+- Equipment failure risks
+- Environmental dangers
+- Human factor risks
+- Emergency situations
+- Maintenance safety concerns
+- Installation and startup hazards
+- Shutdown and isolation procedures
+
+Ensure all safety information is:
+- Based on actual content from the documentation
+- Practical and actionable
+- Specific to the equipment or system
+- Clear about consequences and prevention methods
+- Comprehensive in covering all safety aspects"""
         
-        # Truncate chunks to fit within token limit
-        selected_chunks = self.truncate_chunks_to_fit_context(chunks, system_prompt, user_prompt_template)
+        # Process chunks in batches of 10
+        batch_size = 10
+        all_safety_info = []
         
-        if not selected_chunks:
-            logger.warning("No chunks could fit within token limit")
-            return []
-        
-        # Prepare context from selected chunks
-        context_parts = []
-        for chunk in selected_chunks:
+        for i in range(0, len(chunks), batch_size):
+            batch_chunks = chunks[i:i + batch_size]
+            logger.info(f"Processing batch {i//batch_size + 1}: chunks {i+1}-{min(i+batch_size, len(chunks))}")
+            
+            # Truncate chunks to fit within token limit
+            selected_chunks = self.truncate_chunks_to_fit_context(batch_chunks, system_prompt, user_prompt_template)
+            
+            if not selected_chunks:
+                logger.warning(f"No chunks could fit within token limit for batch {i//batch_size + 1}")
+                continue
+            
+            # Prepare context from selected chunks
+            context_parts = []
+            for chunk in selected_chunks:
+                try:
+                    # Handle both possible chunk structures
+                    if "metadata" in chunk and "document" in chunk:
+                        # Vector DB format
+                        heading = chunk.get("metadata", {}).get("heading", "")
+                        content = chunk.get("document", "")
+                    else:
+                        # Fallback format
+                        heading = chunk.get("heading", "")
+                        content = chunk.get("text", chunk.get("content", ""))
+                    
+                    if content:
+                        context_parts.append(f"**{heading}**\n{content}")
+                except Exception as e:
+                    logger.warning(f"Error processing chunk in safety generation: {str(e)}")
+                    continue
+            
+            if not context_parts:
+                logger.warning(f"No valid context could be extracted for batch {i//batch_size + 1}")
+                continue
+            
+            context = "\n\n".join(context_parts)
+            
+            # Format the user prompt with context
             try:
-                # Handle both possible chunk structures
-                if "metadata" in chunk and "document" in chunk:
-                    # Vector DB format
-                    heading = chunk.get("metadata", {}).get("heading", "")
-                    content = chunk.get("document", "")
-                else:
-                    # Fallback format
-                    heading = chunk.get("heading", "")
-                    content = chunk.get("text", chunk.get("content", ""))
-                
-                if content:
-                    context_parts.append(f"**{heading}**\n{content}")
+                user_prompt = user_prompt_template.format(context=context)
             except Exception as e:
-                logger.warning(f"Error processing chunk in safety generation: {str(e)}")
+                logger.error(f"Error formatting user prompt in safety generation: {str(e)}")
+                # Fallback to simple prompt
+                user_prompt = f"Please generate safety information based on this context:\n\n{context}"
+            
+            try:
+                response = self.client.complete(
+                    messages=[
+                        SystemMessage(content=system_prompt),
+                        UserMessage(content=user_prompt)
+                    ],
+                    max_tokens=self.max_completion_tokens,
+                    temperature=0.1,
+                    top_p=0.1,
+                    presence_penalty=0.0,
+                    frequency_penalty=0.0,
+                    model=self.model_name
+                )
+                
+                content = response.choices[0].message.content
+                
+                # Extract JSON from response
+                try:
+                    start_idx = content.find('[')
+                    end_idx = content.rfind(']') + 1
+                    json_str = content[start_idx:end_idx]
+                    
+                    safety_data = json.loads(json_str)
+                    batch_safety_info = [SafetyInfo(**info) for info in safety_data]
+                    
+                    all_safety_info.extend(batch_safety_info)
+                    logger.info(f"Generated {len(batch_safety_info)} safety items from batch {i//batch_size + 1}")
+                    
+                except (json.JSONDecodeError, ValueError) as e:
+                    logger.warning(f"Failed to parse JSON response for batch {i//batch_size + 1}: {e}")
+                    batch_fallback = self._parse_safety_from_text(content)
+                    all_safety_info.extend(batch_fallback)
+                    
+            except Exception as e:
+                logger.error(f"Error generating safety information for batch {i//batch_size + 1}: {str(e)}")
                 continue
         
-        if not context_parts:
-            logger.warning("No valid context could be extracted for safety generation")
-            return []
-        
-        context = "\n\n".join(context_parts)
-        
-        # Format the user prompt with context
-        try:
-            user_prompt = user_prompt_template.format(context=context)
-        except Exception as e:
-            logger.error(f"Error formatting user prompt in safety generation: {str(e)}")
-            # Fallback to simple prompt
-            user_prompt = f"Please generate safety information based on this context:\n\n{context}"
-        
-        try:
-            response = self.client.complete(
-                messages=[
-                    SystemMessage(content=system_prompt),
-                    UserMessage(content=user_prompt)
-                ],
-                max_tokens=self.max_completion_tokens,
-                temperature=0.1,
-                top_p=0.1,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
-                model=self.model_name
-            )
-            
-            content = response.choices[0].message.content
-            
-            # Extract JSON from response
-            try:
-                start_idx = content.find('[')
-                end_idx = content.rfind(']') + 1
-                json_str = content[start_idx:end_idx]
-                
-                safety_data = json.loads(json_str)
-                safety_info = [SafetyInfo(**info) for info in safety_data]
-                
-                logger.info(f"Generated {len(safety_info)} safety items")
-                return safety_info
-                
-            except (json.JSONDecodeError, ValueError) as e:
-                logger.warning(f"Failed to parse JSON response: {e}")
-                return self._parse_safety_from_text(content)
-                
-        except Exception as e:
-            logger.error(f"Error generating safety information: {str(e)}")
-            raise e
+        logger.info(f"Generated total {len(all_safety_info)} safety items from all batches")
+        return all_safety_info
     
     def _extract_referenced_sections(self, answer: str, chunks: List[Dict[str, Any]]) -> List[str]:
         """Extract referenced sections from LLM response"""
@@ -757,13 +832,46 @@ Focus on:
         rules = []
         lines = text.split('\n')
         
+        metrics = ['temperature', 'pressure', 'vibration', 'speed', 'flow', 'level', 'voltage', 'current', 'power', 'efficiency']
+        
         for line in lines:
-            if 'if' in line.lower() and ('then' in line.lower() or '>' in line or '<' in line):
+            line_lower = line.lower()
+            if any(word in line_lower for word in ['temperature', 'pressure', 'vibration', 'speed', 'flow', 'level', 'voltage', 'current', 'monitor', 'threshold', 'limit']):
+                # Determine metric
+                metric = "general"
+                for m in metrics:
+                    if m in line_lower:
+                        metric = m
+                        break
+                
+                # Extract threshold if present
+                threshold = line.strip()
+                metric_value = "N/A"
+                
+                # Try to extract numerical values
+                import re
+                numbers = re.findall(r'\d+(?:\.\d+)?', line)
+                if numbers:
+                    metric_value = f"{numbers[0]} units"
+                
+                # Determine consequence based on metric type
+                consequence = "Equipment performance degradation"
+                if 'temperature' in line_lower:
+                    consequence = "Thermal damage, equipment shutdown, safety hazard"
+                elif 'pressure' in line_lower:
+                    consequence = "System failure, pressure vessel damage, safety risk"
+                elif 'vibration' in line_lower:
+                    consequence = "Mechanical damage, bearing failure, equipment wear"
+                elif 'voltage' in line_lower or 'current' in line_lower:
+                    consequence = "Electrical damage, component failure, safety hazard"
+                
                 rules.append(Rule(
-                    condition=line.strip(),
-                    action="Monitor and alert",
-                    category="general",
-                    priority="medium"
+                    rule_name=f"{metric.title()} Monitoring Rule",
+                    threshold=threshold,
+                    metric=metric,
+                    metric_value=metric_value,
+                    description=f"Monitor {metric} to ensure optimal equipment performance and prevent damage",
+                    consequence=consequence
                 ))
         
         return rules
@@ -773,19 +881,43 @@ Focus on:
         tasks = []
         lines = text.split('\n')
         
-        frequencies = ['daily', 'weekly', 'monthly', 'annually']
+        frequencies = ['daily', 'weekly', 'monthly', 'quarterly', 'semi-annually', 'annually', 'as-needed']
+        categories = ['lubrication', 'inspection', 'cleaning', 'calibration', 'safety', 'performance', 'electrical', 'mechanical', 'preventive', 'predictive']
         
         for line in lines:
             line_lower = line.lower()
-            for freq in frequencies:
-                if freq in line_lower:
-                    tasks.append(MaintenanceTask(
-                        task=line.strip(),
-                        frequency=freq,
-                        category="general",
-                        description=line.strip()
-                    ))
-                    break
+            if any(word in line_lower for word in ['maintenance', 'check', 'inspect', 'clean', 'lubricate', 'calibrate', 'test', 'monitor']):
+                # Determine frequency
+                frequency = "monthly"  # default
+                for freq in frequencies:
+                    if freq in line_lower:
+                        frequency = freq
+                        break
+                
+                # Determine category
+                category = "general"  # default
+                for cat in categories:
+                    if cat in line_lower:
+                        category = cat
+                        break
+                
+                # Determine priority based on keywords
+                priority = "medium"  # default
+                if any(word in line_lower for word in ['critical', 'safety', 'emergency', 'urgent']):
+                    priority = "high"
+                elif any(word in line_lower for word in ['routine', 'basic', 'simple']):
+                    priority = "low"
+                
+                tasks.append(MaintenanceTask(
+                    task=line.strip(),
+                    frequency=frequency,
+                    category=category,
+                    description=line.strip(),
+                    priority=priority,
+                    estimated_duration="10 minutes",
+                    required_tools="Standard maintenance tools",
+                    safety_notes="Follow standard safety procedures"
+                ))
         
         return tasks
     
@@ -794,21 +926,63 @@ Focus on:
         safety_items = []
         lines = text.split('\n')
         
+        safety_keywords = ['warning', 'caution', 'danger', 'safety', 'hazard', 'risk', 'emergency', 'protective', 'injury', 'damage']
+        
         for line in lines:
             line_lower = line.lower()
-            if any(word in line_lower for word in ['warning', 'caution', 'danger', 'safety', 'hazard']):
-                if 'warning' in line_lower:
-                    safety_type = 'warning'
-                elif 'procedure' in line_lower:
-                    safety_type = 'procedure'
-                else:
-                    safety_type = 'warning'
+            if any(word in line_lower for word in safety_keywords):
+                # Determine hazard type based on keywords
+                hazard_type = "General Safety Hazard"
+                if 'temperature' in line_lower or 'heat' in line_lower:
+                    hazard_type = "High Temperature Hazard"
+                elif 'pressure' in line_lower:
+                    hazard_type = "Pressure Hazard"
+                elif 'electrical' in line_lower or 'voltage' in line_lower or 'current' in line_lower:
+                    hazard_type = "Electrical Hazard"
+                elif 'mechanical' in line_lower or 'moving' in line_lower:
+                    hazard_type = "Mechanical Hazard"
+                elif 'chemical' in line_lower or 'toxic' in line_lower:
+                    hazard_type = "Chemical Hazard"
+                
+                # Determine causes based on hazard type
+                causes = "Equipment malfunction, operational error, environmental factors"
+                if 'temperature' in line_lower:
+                    causes = "Continuous operation, lack of cooling, mechanical friction, electrical resistance"
+                elif 'pressure' in line_lower:
+                    causes = "System overpressure, valve failure, pump malfunction, pressure vessel damage"
+                elif 'electrical' in line_lower:
+                    causes = "Electrical fault, insulation failure, overcurrent, short circuit"
+                elif 'mechanical' in line_lower:
+                    causes = "Mechanical failure, wear and tear, improper maintenance, operational stress"
+                
+                # Determine prevention methods
+                how_to_avoid = "Follow safety procedures, use proper PPE, maintain equipment, monitor conditions"
+                if 'temperature' in line_lower:
+                    how_to_avoid = "Monitor temperature sensors, ensure proper ventilation, follow operating procedures, use thermal protection"
+                elif 'pressure' in line_lower:
+                    how_to_avoid = "Monitor pressure gauges, check relief valves, follow pressure limits, maintain pressure systems"
+                elif 'electrical' in line_lower:
+                    how_to_avoid = "Use proper electrical PPE, check insulation, follow lockout procedures, maintain electrical systems"
+                elif 'mechanical' in line_lower:
+                    how_to_avoid = "Use mechanical guards, follow lockout procedures, maintain equipment, monitor for unusual sounds/vibration"
+                
+                # Determine safety information
+                safety_info = "Wear appropriate PPE, follow safety procedures, maintain safe distance, implement monitoring"
+                if 'temperature' in line_lower:
+                    safety_info = "Wear heat-resistant PPE, maintain safe distance, implement temperature monitoring, establish emergency shutdown procedures"
+                elif 'pressure' in line_lower:
+                    safety_info = "Wear pressure-resistant PPE, maintain safe distance, implement pressure monitoring, establish emergency relief procedures"
+                elif 'electrical' in line_lower:
+                    safety_info = "Wear electrical PPE, maintain safe distance, implement electrical monitoring, establish emergency shutdown procedures"
+                elif 'mechanical' in line_lower:
+                    safety_info = "Wear mechanical PPE, maintain safe distance, implement vibration monitoring, establish emergency stop procedures"
                 
                 safety_items.append(SafetyInfo(
-                    type=safety_type,
-                    title=line.strip()[:100],
-                    description=line.strip(),
-                    category="general"
+                    name=hazard_type,
+                    about_reaction=line.strip(),
+                    causes=causes,
+                    how_to_avoid=how_to_avoid,
+                    safety_info=safety_info
                 ))
         
         return safety_items

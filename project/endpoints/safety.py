@@ -39,24 +39,70 @@ async def generate_safety_information(pdf_name: str = Path(..., description="Nam
                 detail=f"PDF '{pdf_name}' not found. Please upload the PDF first."
             )
         
-        # Get chunks from vector database
-        logger.info("Retrieving chunks from vector database...")
-        all_chunks = await vector_db.get_all_chunks(
-            collection_name=collection_name,
-            limit=settings.max_chunks_per_batch
-        )
+        # Get chunks from vector database with smart filtering for safety content
+        logger.info("Retrieving safety-relevant chunks from vector database...")
         
-        if not all_chunks:
+        # Define safety-related keywords for smart filtering
+        safety_keywords = [
+            "safety", "warning", "caution", "danger", "hazard", "risk", "emergency", "protective",
+            "injury", "damage", "failure", "malfunction", "overheating", "overload", "pressure",
+            "temperature", "voltage", "current", "shock", "burn", "cut", "crush", "fall",
+            "ppe", "helmet", "gloves", "goggles", "mask", "vest", "boots", "ear protection",
+            "lockout", "tagout", "isolation", "depressurize", "de-energize", "ventilation",
+            "flammable", "explosive", "toxic", "corrosive", "radiation", "noise", "vibration",
+            "maintenance", "repair", "installation", "operation", "startup", "shutdown",
+            "procedure", "instruction", "manual", "guide", "protocol", "standard", "regulation"
+        ]
+        
+        # Query for safety-relevant chunks using keywords
+        safety_chunks = []
+        for keyword in safety_keywords[:12]:  # Use top 12 keywords to get diverse content
+            try:
+                keyword_chunks = await vector_db.query_chunks(
+                    collection_name=collection_name,
+                    query=keyword,
+                    top_k=4
+                )
+                safety_chunks.extend(keyword_chunks)
+                logger.info(f"Found {len(keyword_chunks)} chunks for keyword: {keyword}")
+            except Exception as e:
+                logger.warning(f"Error querying for keyword '{keyword}': {str(e)}")
+                continue
+        
+        # Remove duplicates and get top 20 most relevant chunks
+        unique_chunks = []
+        seen_chunks = set()
+        for chunk in safety_chunks:
+            chunk_id = chunk.get("metadata", {}).get("chunk_index", "")
+            if chunk_id not in seen_chunks:
+                unique_chunks.append(chunk)
+                seen_chunks.add(chunk_id)
+        
+        # Sort by relevance (lower distance = higher relevance) and take top 20
+        unique_chunks.sort(key=lambda x: x.get("distance", 1.0))
+        top_safety_chunks = unique_chunks[:20]
+        
+        logger.info(f"Found {len(top_safety_chunks)} unique safety-relevant chunks out of {len(safety_chunks)} total chunks")
+        
+        if not top_safety_chunks:
+            logger.warning("No safety-relevant chunks found, falling back to general chunks")
+            # Fallback to general chunks if no safety-specific content found
+            top_safety_chunks = await vector_db.get_all_chunks(
+                collection_name=collection_name,
+                limit=20
+            )
+        
+        if not top_safety_chunks:
             raise HTTPException(
                 status_code=404,
                 detail="No content found in PDF"
             )
         
-        logger.info(f"Processing {len(all_chunks)} chunks for safety information generation")
+        logger.info(f"Processing {len(top_safety_chunks)} chunks for safety information generation")
         
-        # Generate safety information using LLM
+        # Generate safety information using LLM with enhanced prompt
         logger.info("Generating safety information with LLM...")
-        safety_information = await llm_service.generate_safety_information(all_chunks)
+        safety_information = await llm_service.generate_safety_information(top_safety_chunks)
         
         processing_time = calculate_processing_time(start_time)
         

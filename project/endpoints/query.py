@@ -33,6 +33,9 @@ async def query_pdf(request: QueryRequest):
         collection_name = sanitize_filename(request.pdf_name)
         logger.info(f"Looking for collection: '{collection_name}'")
         
+        # Store the original collection name for image retrieval BEFORE any fallback logic
+        original_collection_name = collection_name
+        
         # Check if collection exists
         if not vector_db.collection_exists(collection_name):
             raise HTTPException(
@@ -72,13 +75,12 @@ async def query_pdf(request: QueryRequest):
                     detail=f"Collection '{collection_name}' is an image collection. The PDF '{request.pdf_name}' may not have been uploaded correctly."
                 )
         
-        # Store the original collection name for image retrieval
-        original_collection_name = collection_name
-        
         # Also check if the images collection exists for this PDF
         images_collection_name = f"{original_collection_name}_images"
         has_images_collection = vector_db.collection_exists(images_collection_name)
+        logger.info(f"Original collection name: '{original_collection_name}'")
         logger.info(f"Images collection '{images_collection_name}' exists: {has_images_collection}")
+        logger.info(f"Document collection name: '{collection_name}'")
         
         if collection_type == "unknown":
             logger.warning(f"Collection '{collection_name}' type is unknown, proceeding with caution")

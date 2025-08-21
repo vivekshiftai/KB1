@@ -49,10 +49,12 @@ class PDFListResponse(BaseModel):
     total_count: int
 
 class Rule(BaseModel):
-    condition: str
-    action: str
-    category: str
-    priority: str
+    rule_name: str
+    threshold: str
+    metric: str
+    metric_value: str
+    description: str
+    consequence: str
 
 class RulesResponse(BaseModel):
     success: bool
@@ -65,6 +67,10 @@ class MaintenanceTask(BaseModel):
     frequency: str
     category: str
     description: str
+    priority: str = "medium"  # high, medium, low
+    estimated_duration: str = "5 minutes"
+    required_tools: str = ""
+    safety_notes: str = ""
 
 class MaintenanceResponse(BaseModel):
     success: bool
@@ -73,10 +79,11 @@ class MaintenanceResponse(BaseModel):
     processing_time: str
 
 class SafetyInfo(BaseModel):
-    type: str  # warning, procedure, emergency
-    title: str
-    description: str
-    category: str
+    name: str
+    about_reaction: str
+    causes: str
+    how_to_avoid: str
+    safety_info: str
 
 class SafetyResponse(BaseModel):
     success: bool
@@ -95,3 +102,8 @@ class ChunkData(BaseModel):
     text: str
     images: List[str]  # Image paths from MinerU output
     tables: List[str]
+
+class PDFDeleteResponse(BaseModel):
+    success: bool
+    message: str
+    pdf_name: str
