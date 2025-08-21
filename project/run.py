@@ -36,8 +36,5 @@ if __name__ == "__main__":
         host=host,
         port=port,
         reload=reload,
-        log_level=log_level,
-        timeout_keep_alive=30,  # Keep-alive timeout
-        timeout_graceful_shutdown=30,  # Graceful shutdown timeout
-        access_log=True
+        log_level=log_level
     )

@@ -6,9 +6,8 @@ Version: 0.1
 """
 
 import logging
-import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
@@ -57,45 +56,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Timeout middleware
-@app.middleware("http")
-async def timeout_middleware(request: Request, call_next):
-    """Add timeout handling to all requests"""
-    try:
-        # Set timeout based on endpoint
-        timeout = settings.request_timeout
-        if "upload" in request.url.path:
-            timeout = settings.upload_timeout
-        elif "generate-rules" in request.url.path or "generate-maintenance" in request.url.path or "generate-safety" in request.url.path:
-            timeout = settings.llm_timeout
-        
-        logger.info(f"Request to {request.url.path} with timeout: {timeout}s")
-        
-        # Execute request with timeout
-        response = await asyncio.wait_for(call_next(request), timeout=timeout)
-        return response
-        
-    except asyncio.TimeoutError:
-        logger.error(f"Request to {request.url.path} timed out after {timeout}s")
-        return JSONResponse(
-            status_code=408,
-            content={
-                "success": False,
-                "message": "Request timeout",
-                "detail": f"Request took longer than {timeout} seconds to complete"
-            }
-        )
-    except Exception as e:
-        logger.error(f"Error in timeout middleware: {str(e)}")
-        return JSONResponse(
-            status_code=500,
-            content={
-                "success": False,
-                "message": "Internal server error",
-                "detail": str(e) if settings.log_level.upper() == "DEBUG" else "An unexpected error occurred"
-            }
-        )
-
 # Include routers
 app.include_router(upload.router)
 app.include_router(query.router)
@@ -141,29 +101,7 @@ async def health_check():
         }
     }
 
-@app.get("/performance")
-async def performance_metrics():
-    """Get LLM performance metrics"""
-    from utils.helpers import llm_monitor
-    
-    stats = llm_monitor.get_performance_stats()
-    is_degrading = llm_monitor.is_performance_degrading()
-    
-    return {
-        "llm_performance": {
-            "total_requests": stats["total_requests"],
-            "average_response_time_seconds": round(stats["average_response_time"], 2),
-            "error_rate_percent": round(stats["error_rate"], 2),
-            "timeout_rate_percent": round(stats["timeout_rate"], 2),
-            "performance_degrading": is_degrading,
-            "recent_response_times": [round(t, 2) for t in stats["recent_response_times"]]
-        },
-        "recommendations": {
-            "optimize_chunks": is_degrading or stats["average_response_time"] > 30,
-            "reduce_context_size": stats["average_response_time"] > 45,
-            "check_azure_service": stats["timeout_rate"] > 10
-        }
-    }
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):

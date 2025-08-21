@@ -33,11 +33,6 @@ class Settings(BaseSettings):
     max_chunks_per_batch: int = 25
     embedding_model: str = "all-MiniLM-L6-v2"
     
-    # Timeout Settings
-    request_timeout: int = 300  # 5 minutes for request timeout
-    llm_timeout: int = 180      # 3 minutes for LLM operations
-    upload_timeout: int = 600   # 10 minutes for file uploads
-    
     # MinerU Configuration
     device_mode: str = "cpu"  # Force CPU mode
     formula_enable: bool = True
