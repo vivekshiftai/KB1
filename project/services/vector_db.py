@@ -167,7 +167,21 @@ class VectorDatabase:
             
             logger.info(f"Found {len(image_files)} image files in {output_dir}")
             
+            if not image_files:
+                logger.warning(f"No image files found in {output_dir}")
+                return
+            
+            # Create images collection using only PDF name
+            images_collection_name = f"{collection_name}_images"
+            images_collection = self.client.get_or_create_collection(
+                name=images_collection_name,
+                metadata={"created_at": datetime.now().isoformat()}
+            )
+            
+            logger.info(f"Created images collection: {images_collection_name}")
+            
             # Store each image in the collection
+            stored_count = 0
             for image_file in image_files:
                 try:
                     # Read image file and encode as base64
@@ -189,27 +203,33 @@ class VectorDatabase:
                         "created_at": datetime.now().isoformat()
                     }
                     
-                    # Store in a separate images collection
-                    images_collection_name = f"{collection_name}_images"
-                    images_collection = self.client.get_or_create_collection(
-                        name=images_collection_name,
-                        metadata={"created_at": datetime.now().isoformat()}
-                    )
-                    
-                    # Store image with base64 data
+                    # Store image with base64 data using filename as ID for easy retrieval
+                    image_id = image_file.name
                     images_collection.add(
-                        ids=[f"img_{relative_path}"],
+                        ids=[image_id],
                         documents=[image_base64],
                         metadatas=[image_metadata]
                     )
                     
-                    logger.info(f"Stored image: {relative_path} ({len(image_data)} bytes)")
+                    logger.info(f"Stored image: {image_file.name} (path: {relative_path}, {len(image_data)} bytes)")
+                    stored_count += 1
                     
                 except Exception as e:
                     logger.error(f"Error storing image {image_file}: {str(e)}")
                     continue
             
-            logger.info(f"Successfully stored {len(image_files)} images for collection {collection_name}")
+            logger.info(f"Successfully stored {stored_count} images in collection {images_collection_name}")
+            
+            # Verify storage by checking collection
+            try:
+                verify_collection = self.client.get_collection(name=images_collection_name)
+                actual_count = verify_collection.count()
+                logger.info(f"Verified: Images collection {images_collection_name} contains {actual_count} images")
+                
+                if actual_count != stored_count:
+                    logger.warning(f"Storage count mismatch: stored {stored_count}, but collection has {actual_count}")
+            except Exception as e:
+                logger.warning(f"Could not verify image storage: {str(e)}")
             
         except Exception as e:
             logger.error(f"Error in image storage: {str(e)}")
@@ -220,15 +240,45 @@ class VectorDatabase:
         logger.info(f"Retrieving image {image_path} from collection {collection_name}")
         
         try:
-            # Get images collection
-            images_collection_name = f"{collection_name}_images"
-            images_collection = self.client.get_collection(name=images_collection_name)
+            # Try multiple possible collection names for image retrieval
+            possible_collection_names = [
+                f"{collection_name}_images",  # e.g., "test_images"
+                collection_name,  # e.g., "test" (in case images are stored in main collection)
+                f"{collection_name.replace('_images', '')}_images",  # Handle double _images suffix
+                f"{collection_name.replace('_images', '')}"  # Remove _images if present
+            ]
             
-            # Try to get image directly by ID first (more efficient)
-            image_id = f"img_{image_path}"
+            images_collection = None
+            successful_collection_name = None
+            
+            for coll_name in possible_collection_names:
+                try:
+                    logger.info(f"Trying to get image from collection: {coll_name}")
+                    images_collection = self.client.get_collection(name=coll_name)
+                    successful_collection_name = coll_name
+                    logger.info(f"Successfully accessed collection: {coll_name}")
+                    break
+                except Exception as e:
+                    logger.debug(f"Collection {coll_name} not found: {str(e)}")
+                    continue
+            
+            if images_collection is None:
+                logger.error(f"Could not find any valid collection for image retrieval")
+                logger.error(f"Tried collections: {possible_collection_names}")
+                return None
+            
+            # Debug: Log what's in the images collection
+            logger.info(f"Searching for image in collection: {successful_collection_name}")
+            logger.info(f"Looking for image path: {image_path}")
+            logger.info(f"Image filename to search for: {image_filename}")
+            
+            # Try to get image directly by filename first (more efficient)
+            # Extract filename from path (e.g., "images/abc123.jpg" -> "abc123.jpg")
+            image_filename = image_path.split('/')[-1] if '/' in image_path else image_path
+            
             try:
                 results = images_collection.get(
-                    ids=[image_id],
+                    ids=[image_filename],
                     include=["documents", "metadatas"]
                 )
                 
@@ -244,6 +294,19 @@ class VectorDatabase:
             except Exception as e:
                 logger.debug(f"Direct lookup failed for {image_id}, trying query method: {str(e)}")
             
+            # Debug: Get all IDs in the collection to see what's available
+            try:
+                all_ids = images_collection.get(include=["metadatas"], limit=1000)
+                logger.info(f"Available image filenames in collection: {all_ids['ids'][:10]}...")  # Show first 10 filenames
+                logger.info(f"Total images in collection: {len(all_ids['ids'])}")
+                
+                # Show sample metadata to verify storage
+                if all_ids["metadatas"]:
+                    sample_metadata = all_ids["metadatas"][:3]
+                    logger.info(f"Sample image metadata: {sample_metadata}")
+            except Exception as e:
+                logger.warning(f"Could not get all IDs from collection: {str(e)}")
+            
             # Fallback: Query for the specific image by path
             results = images_collection.query(
                 query_texts=["image"],  # Dummy query to get all images
@@ -251,9 +314,13 @@ class VectorDatabase:
                 include=["documents", "metadatas"]
             )
             
-            # Find the image by path
+            # Find the image by filename (fallback)
             for i, metadata in enumerate(results["metadatas"][0]):
-                if metadata.get("path") == image_path:
+                stored_filename = metadata.get("filename", "")
+                stored_path = metadata.get("path", "")
+                
+                # Try to match by filename first, then by path
+                if stored_filename == image_filename or stored_path == image_path:
                     image_data = results["documents"][0][i]
                     return {
                         "data": image_data,  # Base64 encoded image

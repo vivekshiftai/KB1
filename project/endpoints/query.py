@@ -226,10 +226,52 @@ async def query_pdf(request: QueryRequest):
         if all_image_paths:
             logger.info(f"Fetching {len(all_image_paths)} images from images collection...")
             
+            # Debug: Check what collections exist
+            all_collections = [coll.name for coll in vector_db.client.list_collections()]
+            logger.info(f"All available collections: {all_collections}")
+            
+            # Debug: Check if images collection exists
+            images_collection_name = f"{original_collection_name}_images"
+            logger.info(f"Looking for images collection: {images_collection_name}")
+            logger.info(f"Images collection exists: {vector_db.collection_exists(images_collection_name)}")
+            
+            if vector_db.collection_exists(images_collection_name):
+                images_collection = vector_db.client.get_collection(name=images_collection_name)
+                images_count = images_collection.count()
+                logger.info(f"Images collection has {images_count} images")
+                
+                # Get sample image metadata
+                sample_images = images_collection.get(include=["metadatas"], limit=3)
+                if sample_images["metadatas"]:
+                    logger.info(f"Sample image metadata: {sample_images['metadatas'][:3]}")
+                    sample_paths = [meta.get("path", "") for meta in sample_images["metadatas"]]
+                    logger.info(f"Sample image paths: {sample_paths}")
+            
             for image_path in all_image_paths:
                 try:
-                    # Get image data from images collection using the original collection name
-                    image_data = await vector_db.get_image(original_collection_name, image_path)
+                    # Try multiple possible collection names for image retrieval
+                    possible_collection_names = [
+                        original_collection_name,  # e.g., "pdf_test"
+                        f"{original_collection_name}_images",  # e.g., "pdf_test_images"
+                        collection_name,  # fallback to document collection name
+                        f"{collection_name}_images"  # fallback to document collection with _images
+                    ]
+                    
+                    image_data = None
+                    successful_collection = None
+                    
+                    for coll_name in possible_collection_names:
+                        try:
+                            logger.info(f"Trying to get image from collection: {coll_name}")
+                            image_data = await vector_db.get_image(coll_name, image_path)
+                            if image_data:
+                                successful_collection = coll_name
+                                logger.info(f"Successfully found image in collection: {coll_name}")
+                                break
+                        except Exception as e:
+                            logger.warning(f"Failed to get image from collection {coll_name}: {str(e)}")
+                            continue
+                    
                     if image_data:
                         # Create ImageData object
                         image_obj = ImageData(
@@ -239,9 +281,10 @@ async def query_pdf(request: QueryRequest):
                             size=image_data["metadata"]["size"]
                         )
                         image_data_list.append(image_obj)
-                        logger.info(f"Fetched image: {image_path} ({image_data['metadata']['size']} bytes)")
+                        logger.info(f"Fetched image: {image_path} ({image_data['metadata']['size']} bytes) from {successful_collection}")
                     else:
-                        logger.warning(f"Image not found in images collection: {image_path}")
+                        logger.warning(f"Image not found in any collection: {image_path}")
+                        logger.warning(f"Tried collections: {possible_collection_names}")
                 except Exception as e:
                     logger.error(f"Error fetching image {image_path}: {str(e)}")
                     continue

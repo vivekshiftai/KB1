@@ -27,15 +27,12 @@ def setup_logging(level: str = "INFO"):
 
 def sanitize_filename(filename: str) -> str:
     """Sanitize filename for use as collection name"""
-    # Remove extension and special characters
+    # Remove extension and special characters, use only the PDF name
     base_name = Path(filename).stem
     sanitized = re.sub(r'[^\w\-_]', '_', base_name.lower())
     
-    # Avoid double pdf_ prefix
-    if sanitized.startswith('pdf_'):
-        return sanitized
-    else:
-        return f"pdf_{sanitized}"
+    # Return clean PDF name without any prefixes
+    return sanitized
 
 def calculate_processing_time(start_time: float) -> str:
     """Calculate processing time in seconds"""

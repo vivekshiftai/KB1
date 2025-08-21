@@ -169,6 +169,81 @@ async def list_collections():
         logger.error(f"Error listing collections: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to list collections: {str(e)}")
 
+@router.get("/test-images/{pdf_name}")
+async def test_images(pdf_name: str):
+    """Test image storage and retrieval for a specific PDF"""
+    try:
+        vector_db = VectorDatabase()
+        collection_name = sanitize_filename(pdf_name)
+        
+        # Check document collection
+        doc_collection_info = None
+        if vector_db.collection_exists(collection_name):
+            doc_collection = vector_db.client.get_collection(name=collection_name)
+            doc_count = doc_collection.count()
+            doc_sample = doc_collection.get(include=["metadatas"], limit=3)
+            
+            # Extract image paths from document chunks
+            image_paths = []
+            for metadata in doc_sample["metadatas"]:
+                if "images" in metadata:
+                    try:
+                        import json
+                        chunk_images = json.loads(metadata["images"])
+                        image_paths.extend(chunk_images)
+                    except:
+                        pass
+            
+            doc_collection_info = {
+                "collection_name": collection_name,
+                "count": doc_count,
+                "sample_metadata": doc_sample["metadatas"][:3] if doc_sample["metadatas"] else [],
+                "image_paths_found": list(set(image_paths))
+            }
+        
+        # Check images collection
+        images_collection_name = f"{collection_name}_images"
+        images_collection_info = None
+        if vector_db.collection_exists(images_collection_name):
+            images_collection = vector_db.client.get_collection(name=images_collection_name)
+            images_count = images_collection.count()
+            images_sample = images_collection.get(include=["metadatas"], limit=5)
+            
+            images_collection_info = {
+                "collection_name": images_collection_name,
+                "count": images_count,
+                "sample_metadata": images_sample["metadatas"][:5] if images_sample["metadatas"] else [],
+                "all_image_paths": [meta.get("path", "") for meta in images_sample["metadatas"]] if images_sample["metadatas"] else []
+            }
+        
+        # Test image retrieval for a sample image path
+        test_image_retrieval = None
+        if doc_collection_info and doc_collection_info["image_paths_found"]:
+            test_path = doc_collection_info["image_paths_found"][0]
+            try:
+                image_data = await vector_db.get_image(collection_name, test_path)
+                test_image_retrieval = {
+                    "test_path": test_path,
+                    "retrieved": image_data is not None,
+                    "metadata": image_data["metadata"] if image_data else None
+                }
+            except Exception as e:
+                test_image_retrieval = {
+                    "test_path": test_path,
+                    "retrieved": False,
+                    "error": str(e)
+                }
+        
+        return {
+            "document_collection": doc_collection_info,
+            "images_collection": images_collection_info,
+            "test_image_retrieval": test_image_retrieval,
+            "all_collections": [coll.name for coll in vector_db.client.list_collections()]
+        }
+        
+    except Exception as e:
+        return {"error": str(e)}
+
 @router.get("/health")
 async def debug_health():
     """Comprehensive health check"""
