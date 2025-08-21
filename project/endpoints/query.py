@@ -40,11 +40,6 @@ async def query_pdf(request: QueryRequest):
                 detail=f"PDF '{request.pdf_name}' not found. Please upload the PDF first."
             )
         
-        # Also check if the images collection exists for this PDF
-        images_collection_name = f"{collection_name}_images"
-        has_images_collection = vector_db.collection_exists(images_collection_name)
-        logger.info(f"Images collection '{images_collection_name}' exists: {has_images_collection}")
-        
         # Check collection type to ensure we're querying a document collection
         collection_type = vector_db.get_collection_type(collection_name)
         logger.info(f"Collection '{collection_name}' type: {collection_type}")
@@ -76,6 +71,14 @@ async def query_pdf(request: QueryRequest):
                     status_code=500,
                     detail=f"Collection '{collection_name}' is an image collection. The PDF '{request.pdf_name}' may not have been uploaded correctly."
                 )
+        
+        # Store the original collection name for image retrieval
+        original_collection_name = collection_name
+        
+        # Also check if the images collection exists for this PDF
+        images_collection_name = f"{original_collection_name}_images"
+        has_images_collection = vector_db.collection_exists(images_collection_name)
+        logger.info(f"Images collection '{images_collection_name}' exists: {has_images_collection}")
         
         if collection_type == "unknown":
             logger.warning(f"Collection '{collection_name}' type is unknown, proceeding with caution")
@@ -223,8 +226,8 @@ async def query_pdf(request: QueryRequest):
             
             for image_path in all_image_paths:
                 try:
-                    # Get image data from images collection
-                    image_data = await vector_db.get_image(collection_name, image_path)
+                    # Get image data from images collection using the original collection name
+                    image_data = await vector_db.get_image(original_collection_name, image_path)
                     if image_data:
                         # Create ImageData object
                         image_obj = ImageData(
