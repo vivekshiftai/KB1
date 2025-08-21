@@ -30,7 +30,12 @@ def sanitize_filename(filename: str) -> str:
     # Remove extension and special characters
     base_name = Path(filename).stem
     sanitized = re.sub(r'[^\w\-_]', '_', base_name.lower())
-    return f"pdf_{sanitized}"
+    
+    # Avoid double pdf_ prefix
+    if sanitized.startswith('pdf_'):
+        return sanitized
+    else:
+        return f"pdf_{sanitized}"
 
 def calculate_processing_time(start_time: float) -> str:
     """Calculate processing time in seconds"""
