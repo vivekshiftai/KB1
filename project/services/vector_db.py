@@ -387,37 +387,52 @@ class VectorDatabase:
             pdf_collections = []
             
             for collection in collections:
-                if collection.name.startswith("pdf_"):
-                    # Get collection info
+                # Skip image collections (they end with _images)
+                if collection.name.endswith("_images"):
+                    continue
+                
+                # Check if this is a document collection by examining metadata
+                try:
                     coll = self.client.get_collection(collection.name)
-                    count = coll.count()
+                    sample_results = coll.get(include=["metadatas"], limit=1)
                     
-                    # Extract PDF name from collection name
-                    pdf_name = collection.name.replace("pdf_", "").replace("_", " ")
-                    
-                    # Get creation date from metadata with robust fallback
-                    created_at = None
-                    meta = getattr(collection, "metadata", None) or {}
-                    if isinstance(meta, dict):
-                        created_at = meta.get("created_at")
-                    if not created_at:
-                        try:
-                            sample = coll.get(include=["metadatas"], limit=1)
-                            if sample and sample.get("metadatas"):
-                                created_at = sample["metadatas"][0].get("created_at")
-                        except Exception:
+                    if sample_results["metadatas"]:
+                        sample_metadata = sample_results["metadatas"][0]
+                        # Skip if this is an image collection (has type: "image")
+                        if "type" in sample_metadata and sample_metadata["type"] == "image":
+                            continue
+                        # Include if this has document structure (has heading field)
+                        if "heading" in sample_metadata:
+                            count = coll.count()
+                            
+                            # Use collection name as PDF name (this matches the upload pattern)
+                            pdf_name = collection.name.replace("_", " ")
+                            
+                            # Get creation date from metadata with robust fallback
                             created_at = None
-                    if created_at:
-                        created_at = datetime.fromisoformat(created_at)
-                    else:
-                        created_at = datetime.now()
-                    
-                    pdf_collections.append(PDFListItem(
-                        collection_name=collection.name,
-                        pdf_name=pdf_name,
-                        created_at=created_at,
-                        chunk_count=count
-                    ))
+                            meta = getattr(collection, "metadata", None) or {}
+                            if isinstance(meta, dict):
+                                created_at = meta.get("created_at")
+                            if not created_at:
+                                try:
+                                    created_at = sample_metadata.get("created_at")
+                                except Exception:
+                                    created_at = None
+                            if created_at:
+                                created_at = datetime.fromisoformat(created_at)
+                            else:
+                                created_at = datetime.now()
+                            
+                            pdf_collections.append(PDFListItem(
+                                collection_name=collection.name,
+                                pdf_name=pdf_name,
+                                created_at=created_at,
+                                chunk_count=count
+                            ))
+                            logger.info(f"Found PDF collection: {collection.name} -> {pdf_name}")
+                except Exception as e:
+                    logger.warning(f"Error examining collection {collection.name}: {str(e)}")
+                    continue
             
             logger.info(f"Found {len(pdf_collections)} PDF collections")
             return pdf_collections

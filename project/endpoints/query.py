@@ -29,8 +29,9 @@ async def query_pdf(request: QueryRequest):
         vector_db = VectorDatabase()
         llm_service = LLMService()
         
-        # Generate collection name
+        # Generate collection name - use exact same pattern as upload
         collection_name = sanitize_filename(request.pdf_name)
+        logger.info(f"Looking for collection: '{collection_name}'")
         
         # Check if collection exists
         if not vector_db.collection_exists(collection_name):
@@ -43,11 +44,13 @@ async def query_pdf(request: QueryRequest):
         collection_type = vector_db.get_collection_type(collection_name)
         logger.info(f"Collection '{collection_name}' type: {collection_type}")
         
+        # If the first collection is an image collection, this indicates a naming issue
         if collection_type == "image":
             logger.error(f"Collection '{collection_name}' is an image collection, not a document collection")
+            logger.error(f"This suggests the PDF '{request.pdf_name}' was not uploaded correctly or the collection name is wrong")
             raise HTTPException(
                 status_code=500,
-                detail=f"Collection '{collection_name}' is an image collection. Please check the PDF upload process."
+                detail=f"Collection '{collection_name}' is an image collection. The PDF '{request.pdf_name}' may not have been uploaded correctly."
             )
         
         if collection_type == "unknown":
