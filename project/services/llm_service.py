@@ -12,7 +12,6 @@ from typing import List, Dict, Any, Optional
 from azure.ai.inference import ChatCompletionsClient
 from azure.ai.inference.models import SystemMessage, UserMessage, AssistantMessage
 from azure.core.credentials import AzureKeyCredential
-from azure.core.pipeline.transport import RequestsTransport
 from config import settings
 from models.schemas import Rule, MaintenanceTask, SafetyInfo
 
@@ -25,31 +24,19 @@ class LLMService:
         self.model_name = "Llama-3.2-90B-Vision-Instruct"
         self.api_version = "2024-05-01-preview"
         
-        # Timeout configurations
-        self.request_timeout = 180  # 3 minutes for request timeout
-        self.read_timeout = 900     # 15 minutes for read timeout
-        self.connect_timeout = 30   # 30 seconds for connection timeout
-        
         # Validate Azure AI key
         if not settings.azure_openai_key:
             logger.error("Azure AI key not configured. Please set AZURE_OPENAI_KEY in your environment.")
             raise ValueError("Azure AI key is required but not configured")
         
         try:
-            # Create custom transport with timeout configurations
-            transport = RequestsTransport(
-                connection_timeout=self.connect_timeout,
-                read_timeout=self.read_timeout
-            )
-            
-            # Initialize Azure AI client with timeout configurations
+            # Initialize Azure AI client
             self.client = ChatCompletionsClient(
                 endpoint=self.endpoint,
                 credential=AzureKeyCredential(settings.azure_openai_key),
-                api_version=self.api_version,
-                transport=transport
+                api_version=self.api_version
             )
-            logger.info(f"Azure AI client initialized successfully with timeouts - connect: {self.connect_timeout}s, read: {self.read_timeout}s")
+            logger.info("Azure AI client initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize Azure AI client: {str(e)}")
             raise e
