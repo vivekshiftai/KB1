@@ -116,6 +116,11 @@ class VectorDatabase:
                 embeddings.append(embedding)
                 documents.append(chunk.text)
                 
+                # Debug: Log document content
+                logger.info(f"Storing chunk {i}: heading='{chunk.heading}', text_length={len(chunk.text)}")
+                if len(chunk.text) < 100:
+                    logger.warning(f"Chunk {i} has very short text: '{chunk.text}'")
+                
                 # Prepare metadata
                 metadata = {
                     "heading": chunk.heading,
@@ -283,6 +288,25 @@ class VectorDatabase:
             # Get collection
             collection = self.client.get_collection(name=collection_name)
             
+            # Check if this is an images collection (ends with _images)
+            if collection_name.endswith("_images"):
+                logger.warning(f"Attempting to query images collection: {collection_name}")
+                logger.warning("This should not happen - images collections should not be queried for text content")
+                return []
+            
+            # Validate that this is a document collection by checking metadata structure
+            # Get a sample to check metadata structure
+            sample_results = collection.get(include=["metadatas"], limit=1)
+            if sample_results["metadatas"]:
+                sample_metadata = sample_results["metadatas"][0]
+                if "type" in sample_metadata and sample_metadata["type"] == "image":
+                    logger.error(f"Collection {collection_name} contains image data, not document chunks")
+                    logger.error(f"Sample metadata: {sample_metadata}")
+                    return []
+                if "heading" not in sample_metadata:
+                    logger.warning(f"Collection {collection_name} metadata missing 'heading' field")
+                    logger.warning(f"Sample metadata keys: {list(sample_metadata.keys())}")
+            
             # Generate query embedding
             query_embedding = self.embedding_model.encode(query).tolist()
             
@@ -315,6 +339,12 @@ class VectorDatabase:
                 total_images += len(images)
                 total_tables += len(tables)
                 
+                # Skip image chunks
+                metadata = results["metadatas"][0][i]
+                if "type" in metadata and metadata["type"] == "image":
+                    logger.warning(f"Skipping image chunk: {metadata.get('filename', 'unknown')}")
+                    continue
+                
                 result = {
                     "document": results["documents"][0][i],
                     "metadata": results["metadatas"][0][i],
@@ -323,6 +353,20 @@ class VectorDatabase:
                     "tables": tables
                 }
                 formatted_results.append(result)
+                
+                # Debug: Log retrieved document content
+                doc_content = results["documents"][0][i]
+                heading = results["metadatas"][0][i].get("heading", f"Chunk {i}")
+                logger.info(f"Retrieved chunk {i}: heading='{heading}', content_length={len(doc_content)}")
+                
+                # Validate that this is a document chunk, not an image chunk
+                metadata = results["metadatas"][0][i]
+                if "type" in metadata and metadata["type"] == "image":
+                    logger.warning(f"Retrieved image chunk instead of document chunk: {metadata}")
+                    continue
+                
+                if len(doc_content) < 100:
+                    logger.warning(f"Retrieved chunk {i} has very short content: '{doc_content}'")
             
             logger.info(f"Total images in results: {total_images}")
             logger.info(f"Total tables in results: {total_tables}")
@@ -420,3 +464,21 @@ class VectorDatabase:
             return True
         except Exception:
             return False
+    
+    def get_collection_type(self, collection_name: str) -> str:
+        """Get the type of collection (document or image)"""
+        try:
+            collection = self.client.get_collection(collection_name)
+            sample_results = collection.get(include=["metadatas"], limit=1)
+            if sample_results["metadatas"]:
+                sample_metadata = sample_results["metadatas"][0]
+                if "type" in sample_metadata and sample_metadata["type"] == "image":
+                    return "image"
+                elif "heading" in sample_metadata:
+                    return "document"
+                else:
+                    return "unknown"
+            return "unknown"
+        except Exception as e:
+            logger.error(f"Error getting collection type for {collection_name}: {str(e)}")
+            return "unknown"

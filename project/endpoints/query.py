@@ -39,6 +39,20 @@ async def query_pdf(request: QueryRequest):
                 detail=f"PDF '{request.pdf_name}' not found. Please upload the PDF first."
             )
         
+        # Check collection type to ensure we're querying a document collection
+        collection_type = vector_db.get_collection_type(collection_name)
+        logger.info(f"Collection '{collection_name}' type: {collection_type}")
+        
+        if collection_type == "image":
+            logger.error(f"Collection '{collection_name}' is an image collection, not a document collection")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Collection '{collection_name}' is an image collection. Please check the PDF upload process."
+            )
+        
+        if collection_type == "unknown":
+            logger.warning(f"Collection '{collection_name}' type is unknown, proceeding with caution")
+        
         # Query vector database
         logger.info("Querying vector database...")
         chunks = await vector_db.query_chunks(
@@ -53,6 +67,10 @@ async def query_pdf(request: QueryRequest):
             logger.info(f"First chunk structure: {list(chunks[0].keys())}")
             if 'metadata' in chunks[0]:
                 logger.info(f"First chunk metadata: {list(chunks[0]['metadata'].keys())}")
+            if 'document' in chunks[0]:
+                logger.info(f"First chunk document preview: {chunks[0]['document'][:200]}...")
+                logger.info(f"First chunk document length: {len(chunks[0]['document'])} characters")
+            logger.info(f"First chunk heading: {chunks[0].get('metadata', {}).get('heading', 'No heading')}")
         else:
             logger.warning("No chunks retrieved from vector database")
         
@@ -96,10 +114,7 @@ async def query_pdf(request: QueryRequest):
                 detail=f"Failed to generate response: {str(e)}"
             )
         
-        # Collect images and tables only from chunks that were used by the LLM
-        all_images = []
-        all_tables = []
-        
+        # Step 1: Find chunks that were actually used by the LLM
         logger.info(f"LLM used chunks: {llm_result['chunks_used']}")
         logger.info(f"Total chunks available: {len(chunks)}")
         
@@ -148,7 +163,10 @@ async def query_pdf(request: QueryRequest):
             # Update the LLM result to reflect that all chunks were used
             llm_result['chunks_used'] = [f"Chunk {i+1}" for i in range(len(chunks))]
         
-        # Collect images and tables only from used chunks
+        # Step 2: Collect image paths from used chunks
+        all_image_paths = []
+        all_tables = []
+        
         for i, chunk in enumerate(used_chunks):
             chunk_images = chunk.get("images", [])
             chunk_tables = chunk.get("tables", [])
@@ -159,39 +177,47 @@ async def query_pdf(request: QueryRequest):
             if chunk_tables:
                 logger.info(f"Used chunk {i} tables: {chunk_tables}")
             
-            all_images.extend(chunk_images)
+            all_image_paths.extend(chunk_images)
             all_tables.extend(chunk_tables)
         
         # Remove duplicates
-        all_images = list(set(all_images))
+        all_image_paths = list(set(all_image_paths))
         all_tables = list(set(all_tables))
         
-        # Fetch actual image data from vector database
+        logger.info(f"Total unique image paths from used chunks: {len(all_image_paths)}")
+        logger.info(f"Image paths: {all_image_paths}")
+        
+        # Step 3: Fetch actual image data from images collection using image paths
         from models.schemas import ImageData
         image_data_list = []
         
-        for image_path in all_images:
-            try:
-                # Get image data from vector database
-                image_data = await vector_db.get_image(collection_name, image_path)
-                if image_data:
-                    # Create ImageData object
-                    image_obj = ImageData(
-                        filename=image_data["metadata"]["filename"],
-                        data=image_data["data"],  # Base64 encoded image
-                        mime_type=image_data["content_type"],
-                        size=image_data["metadata"]["size"]
-                    )
-                    image_data_list.append(image_obj)
-                    logger.info(f"Fetched image: {image_path} ({image_data['metadata']['size']} bytes)")
-                else:
-                    logger.warning(f"Image not found: {image_path}")
-            except Exception as e:
-                logger.error(f"Error fetching image {image_path}: {str(e)}")
-                continue
+        if all_image_paths:
+            logger.info(f"Fetching {len(all_image_paths)} images from images collection...")
+            
+            for image_path in all_image_paths:
+                try:
+                    # Get image data from images collection
+                    image_data = await vector_db.get_image(collection_name, image_path)
+                    if image_data:
+                        # Create ImageData object
+                        image_obj = ImageData(
+                            filename=image_data["metadata"]["filename"],
+                            data=image_data["data"],  # Base64 encoded image
+                            mime_type=image_data["content_type"],
+                            size=image_data["metadata"]["size"]
+                        )
+                        image_data_list.append(image_obj)
+                        logger.info(f"Fetched image: {image_path} ({image_data['metadata']['size']} bytes)")
+                    else:
+                        logger.warning(f"Image not found in images collection: {image_path}")
+                except Exception as e:
+                    logger.error(f"Error fetching image {image_path}: {str(e)}")
+                    continue
+        else:
+            logger.info("No image paths found in used chunks")
         
-        logger.info(f"Total unique images from used chunks: {len(all_images)}")
-        logger.info(f"Successfully fetched {len(image_data_list)} images")
+        logger.info(f"Total unique image paths from used chunks: {len(all_image_paths)}")
+        logger.info(f"Successfully fetched {len(image_data_list)} images from images collection")
         logger.info(f"Total unique tables from used chunks: {len(all_tables)}")
         if all_tables:
             logger.info(f"Tables from used chunks: {all_tables}")

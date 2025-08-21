@@ -78,6 +78,22 @@ class LLMService:
         logger.info(f"User template tokens: {user_template_tokens}")
         logger.info(f"Total chunks to process: {len(chunks)}")
         
+        # Log each chunk's token count
+        for i, chunk in enumerate(chunks):
+            try:
+                if "metadata" in chunk and "document" in chunk:
+                    heading = chunk.get("metadata", {}).get("heading", "")
+                    content = chunk.get("document", "")
+                else:
+                    heading = chunk.get("heading", "")
+                    content = chunk.get("text", chunk.get("content", ""))
+                
+                chunk_text = f"**{heading}**\n{content}"
+                chunk_tokens = self.count_tokens(chunk_text)
+                logger.info(f"Chunk {i+1}: '{heading}' ({chunk_tokens} tokens, {len(content)} chars)")
+            except Exception as e:
+                logger.warning(f"Error counting tokens for chunk {i}: {str(e)}")
+        
         # If we have very few tokens available, try to use at least one chunk
         if available_tokens < 1000:
             logger.warning(f"Very few tokens available ({available_tokens}), will try to use at least one chunk")
@@ -184,6 +200,14 @@ class LLMService:
         if chunks:
             logger.info(f"First chunk keys: {list(chunks[0].keys())}")
             logger.info(f"First chunk metadata keys: {list(chunks[0].get('metadata', {}).keys())}")
+            logger.info(f"First chunk document preview: {chunks[0].get('document', '')[:200]}...")
+            logger.info(f"First chunk heading: {chunks[0].get('metadata', {}).get('heading', 'No heading')}")
+            
+            # Log all chunks for debugging
+            for i, chunk in enumerate(chunks):
+                heading = chunk.get('metadata', {}).get('heading', 'No heading')
+                doc_length = len(chunk.get('document', ''))
+                logger.info(f"Chunk {i}: heading='{heading}', document_length={doc_length}")
         else:
             logger.warning("No chunks provided for context")
         
@@ -230,43 +254,54 @@ Provide a clear answer. At the end, add "REFERENCES: General knowledge"."""
                     context = "No specific content available."
                     logger.warning("No chunks available for context")
             else:
-                # Prepare context from selected chunks
-                context_parts = []
-                for i, chunk in enumerate(selected_chunks):
-                    try:
-                        # Handle both possible chunk structures
-                        if "metadata" in chunk and "document" in chunk:
-                            # Vector DB format
-                            heading = chunk.get("metadata", {}).get("heading", f"Section {i+1}")
-                            content = chunk.get("document", "")
-                        else:
-                            # Fallback format
-                            heading = chunk.get("heading", f"Section {i+1}")
-                            content = chunk.get("text", chunk.get("content", ""))
-                        
-                        if content:
-                            context_parts.append(f"**{heading}**\n{content}")
-                    except Exception as e:
-                        logger.warning(f"Error processing chunk {i}: {str(e)}")
-                        continue
+                            # Prepare context from selected chunks
+            context_parts = []
+            for i, chunk in enumerate(selected_chunks):
+                try:
+                    # Handle both possible chunk structures
+                    if "metadata" in chunk and "document" in chunk:
+                        # Vector DB format
+                        heading = chunk.get("metadata", {}).get("heading", f"Section {i+1}")
+                        content = chunk.get("document", "")
+                        logger.info(f"Processing chunk {i}: Vector DB format - heading: '{heading}', content length: {len(content)}")
+                    else:
+                        # Fallback format
+                        heading = chunk.get("heading", f"Section {i+1}")
+                        content = chunk.get("text", chunk.get("content", ""))
+                        logger.info(f"Processing chunk {i}: Fallback format - heading: '{heading}', content length: {len(content)}")
+                    
+                    if content:
+                        context_parts.append(f"**{heading}**\n{content}")
+                        logger.info(f"Added chunk {i} to context: '{heading}' with {len(content)} characters")
+                    else:
+                        logger.warning(f"Chunk {i} has no content: heading='{heading}'")
+                except Exception as e:
+                    logger.warning(f"Error processing chunk {i}: {str(e)}")
+                    continue
                 
                 if not context_parts:
                     logger.warning("No valid context could be extracted from chunks")
                     context = "No specific content available."
                 else:
                     context = "\n\n".join(context_parts)
+                    logger.info(f"Final context length: {len(context)} characters")
+                    logger.info(f"Context preview: {context[:500]}...")
             
             # Format the user prompt with context
             try:
                 user_prompt = user_prompt_template.format(context=context, query=query)
+                logger.info(f"User prompt length: {len(user_prompt)} characters")
+                logger.info(f"User prompt preview: {user_prompt[:500]}...")
             except KeyError as e:
                 logger.error(f"Error formatting user prompt - missing placeholder: {str(e)}")
                 # Fallback to simple prompt
                 user_prompt = f"Please answer this query based on the following context:\n\n{context}\n\nQuery: {query}"
+                logger.info(f"Using fallback user prompt, length: {len(user_prompt)} characters")
             except Exception as e:
                 logger.error(f"Error formatting user prompt: {str(e)}")
                 # Fallback to simple prompt
                 user_prompt = f"Please answer this query based on the following context:\n\n{context}\n\nQuery: {query}"
+                logger.info(f"Using fallback user prompt, length: {len(user_prompt)} characters")
         
         try:
             response = self.client.complete(
@@ -283,6 +318,8 @@ Provide a clear answer. At the end, add "REFERENCES: General knowledge"."""
             )
             
             answer = response.choices[0].message.content
+            logger.info(f"LLM response length: {len(answer)} characters")
+            logger.info(f"LLM response preview: {answer[:500]}...")
             
             # Parse referenced sections from LLM response
             chunks_used = self._extract_referenced_sections(answer, chunks)

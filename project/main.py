@@ -15,7 +15,7 @@ import uvicorn
 from config import settings
 from utils.helpers import setup_logging
 from utils.cpu_optimizer import optimize_for_cpu
-from endpoints import upload, query, pdfs, rules, maintenance, safety, images
+from endpoints import upload, query, pdfs, rules, maintenance, safety, images, debug
 
 
 # Setup logging
@@ -64,6 +64,7 @@ app.include_router(rules.router)
 app.include_router(maintenance.router)
 app.include_router(safety.router)
 app.include_router(images.router)
+app.include_router(debug.router)
 
 @app.get("/")
 async def root():
@@ -79,6 +80,7 @@ async def root():
             "generate_rules": "/generate-rules/{pdf_name}",
             "generate_maintenance": "/generate-maintenance/{pdf_name}",
             "generate_safety": "/generate-safety/{pdf_name}",
+            "debug": "/debug",
             "health": "/health",
             "docs": "/docs"
         }
