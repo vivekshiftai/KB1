@@ -254,30 +254,30 @@ Provide a clear answer. At the end, add "REFERENCES: General knowledge"."""
                     context = "No specific content available."
                     logger.warning("No chunks available for context")
             else:
-                            # Prepare context from selected chunks
-            context_parts = []
-            for i, chunk in enumerate(selected_chunks):
-                try:
-                    # Handle both possible chunk structures
-                    if "metadata" in chunk and "document" in chunk:
-                        # Vector DB format
-                        heading = chunk.get("metadata", {}).get("heading", f"Section {i+1}")
-                        content = chunk.get("document", "")
-                        logger.info(f"Processing chunk {i}: Vector DB format - heading: '{heading}', content length: {len(content)}")
-                    else:
-                        # Fallback format
-                        heading = chunk.get("heading", f"Section {i+1}")
-                        content = chunk.get("text", chunk.get("content", ""))
-                        logger.info(f"Processing chunk {i}: Fallback format - heading: '{heading}', content length: {len(content)}")
-                    
-                    if content:
-                        context_parts.append(f"**{heading}**\n{content}")
-                        logger.info(f"Added chunk {i} to context: '{heading}' with {len(content)} characters")
-                    else:
-                        logger.warning(f"Chunk {i} has no content: heading='{heading}'")
-                except Exception as e:
-                    logger.warning(f"Error processing chunk {i}: {str(e)}")
-                    continue
+                # Prepare context from selected chunks
+                context_parts = []
+                for i, chunk in enumerate(selected_chunks):
+                    try:
+                        # Handle both possible chunk structures
+                        if "metadata" in chunk and "document" in chunk:
+                            # Vector DB format
+                            heading = chunk.get("metadata", {}).get("heading", f"Section {i+1}")
+                            content = chunk.get("document", "")
+                            logger.info(f"Processing chunk {i}: Vector DB format - heading: '{heading}', content length: {len(content)}")
+                        else:
+                            # Fallback format
+                            heading = chunk.get("heading", f"Section {i+1}")
+                            content = chunk.get("text", chunk.get("content", ""))
+                            logger.info(f"Processing chunk {i}: Fallback format - heading: '{heading}', content length: {len(content)}")
+                        
+                        if content:
+                            context_parts.append(f"**{heading}**\n{content}")
+                            logger.info(f"Added chunk {i} to context: '{heading}' with {len(content)} characters")
+                        else:
+                            logger.warning(f"Chunk {i} has no content: heading='{heading}'")
+                    except Exception as e:
+                        logger.warning(f"Error processing chunk {i}: {str(e)}")
+                        continue
                 
                 if not context_parts:
                     logger.warning("No valid context could be extracted from chunks")
