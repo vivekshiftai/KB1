@@ -8,12 +8,16 @@ Version: 0.1
 import json
 import logging
 import tiktoken
+import asyncio
+import time
 from typing import List, Dict, Any, Optional
 from azure.ai.inference import ChatCompletionsClient
 from azure.ai.inference.models import SystemMessage, UserMessage, AssistantMessage
 from azure.core.credentials import AzureKeyCredential
+from azure.core.pipeline.transport import RequestsTransport
 from config import settings
 from models.schemas import Rule, MaintenanceTask, SafetyInfo
+from utils.helpers import llm_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -24,19 +28,31 @@ class LLMService:
         self.model_name = "Llama-3.2-90B-Vision-Instruct"
         self.api_version = "2024-05-01-preview"
         
+        # Timeout configurations
+        self.request_timeout = 180  # 3 minutes for request timeout
+        self.read_timeout = 900     # 5 minutes for read timeout
+        self.connect_timeout = 30   # 30 seconds for connection timeout
+        
         # Validate Azure AI key
         if not settings.azure_openai_key:
             logger.error("Azure AI key not configured. Please set AZURE_OPENAI_KEY in your environment.")
             raise ValueError("Azure AI key is required but not configured")
         
         try:
-            # Initialize Azure AI client
+            # Create custom transport with timeout configurations
+            transport = RequestsTransport(
+                connection_timeout=self.connect_timeout,
+                read_timeout=self.read_timeout
+            )
+            
+            # Initialize Azure AI client with timeout configurations
             self.client = ChatCompletionsClient(
                 endpoint=self.endpoint,
                 credential=AzureKeyCredential(settings.azure_openai_key),
-                api_version=self.api_version
+                api_version=self.api_version,
+                transport=transport
             )
-            logger.info("Azure AI client initialized successfully")
+            logger.info(f"Azure AI client initialized successfully with timeouts - connect: {self.connect_timeout}s, read: {self.read_timeout}s")
         except Exception as e:
             logger.error(f"Failed to initialize Azure AI client: {str(e)}")
             raise e
@@ -177,7 +193,7 @@ class LLMService:
             return text[:max_tokens * 4] + " [Content truncated]"
     
     async def query_with_context(self, chunks: List[Dict[str, Any]], query: str) -> Dict[str, Any]:
-        """Query with context chunks using Azure AI"""
+        """Query with context chunks using Azure AI with timeout and retry logic"""
         logger.info(f"Processing query with {len(chunks)} context chunks")
         
         # Debug: Log chunk structure
@@ -268,34 +284,66 @@ Provide a clear answer. At the end, add "REFERENCES: General knowledge"."""
                 # Fallback to simple prompt
                 user_prompt = f"Please answer this query based on the following context:\n\n{context}\n\nQuery: {query}"
         
-        try:
-            response = self.client.complete(
-                messages=[
-                    SystemMessage(content=system_prompt),
-                    UserMessage(content=user_prompt)
-                ],
-                max_tokens=self.max_completion_tokens,
-                temperature=0.1,
-                top_p=0.1,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
-                model=self.model_name
-            )
-            
-            answer = response.choices[0].message.content
-            
-            # Parse referenced sections from LLM response
-            chunks_used = self._extract_referenced_sections(answer, chunks)
-            logger.info(f"LLM referenced {len(chunks_used)} sections: {chunks_used}")
-            
-            return {
-                "response": answer,
-                "chunks_used": chunks_used
-            }
-            
-        except Exception as e:
-            logger.error(f"Error in LLM query: {str(e)}")
-            raise e
+        # Retry logic with timeout
+        max_retries = 3
+        retry_delay = 2  # seconds
+        llm_start_time = time.time()
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"LLM query attempt {attempt + 1}/{max_retries}")
+                
+                # Use asyncio.wait_for to add timeout to the synchronous call
+                loop = asyncio.get_event_loop()
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: self.client.complete(
+                        messages=[
+                            SystemMessage(content=system_prompt),
+                            UserMessage(content=user_prompt)
+                        ],
+                        max_tokens=self.max_completion_tokens,
+                        temperature=0.1,
+                        top_p=0.1,
+                        presence_penalty=0.0,
+                        frequency_penalty=0.0,
+                        model=self.model_name
+                    )
+                )
+                
+                # Record successful response time
+                response_time = time.time() - llm_start_time
+                llm_monitor.record_response_time(response_time)
+                logger.info(f"LLM query completed in {response_time:.2f}s")
+                
+                answer = response.choices[0].message.content
+                
+                # Parse referenced sections from LLM response
+                chunks_used = self._extract_referenced_sections(answer, chunks)
+                logger.info(f"LLM referenced {len(chunks_used)} sections: {chunks_used}")
+                
+                return {
+                    "response": answer,
+                    "chunks_used": chunks_used
+                }
+                
+            except asyncio.TimeoutError:
+                logger.warning(f"LLM query timed out on attempt {attempt + 1}")
+                llm_monitor.record_error("timeout")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay * (attempt + 1))  # Exponential backoff
+                    continue
+                else:
+                    raise Exception("LLM query timed out after all retry attempts")
+                    
+            except Exception as e:
+                logger.error(f"Error in LLM query attempt {attempt + 1}: {str(e)}")
+                llm_monitor.record_error("general")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay * (attempt + 1))  # Exponential backoff
+                    continue
+                else:
+                    raise e
     
     async def generate_rules(self, chunks: List[Dict[str, Any]]) -> List[Rule]:
         """Generate IoT monitoring rules from chunks"""
@@ -372,43 +420,67 @@ Focus on:
             # Fallback to simple prompt
             user_prompt = f"Please generate IoT monitoring rules based on this context:\n\n{context}"
         
-        try:
-            response = self.client.complete(
-                messages=[
-                    SystemMessage(content=system_prompt),
-                    UserMessage(content=user_prompt)
-                ],
-                max_tokens=self.max_completion_tokens,
-                temperature=0.2,
-                top_p=0.1,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
-                model=self.model_name
-            )
-            
-            content = response.choices[0].message.content
-            
-            # Extract JSON from response
+        # Retry logic with timeout
+        max_retries = 3
+        retry_delay = 2  # seconds
+        
+        for attempt in range(max_retries):
             try:
-                # Find JSON in response
-                start_idx = content.find('[')
-                end_idx = content.rfind(']') + 1
-                json_str = content[start_idx:end_idx]
+                logger.info(f"Rules generation attempt {attempt + 1}/{max_retries}")
                 
-                rules_data = json.loads(json_str)
-                rules = [Rule(**rule) for rule in rules_data]
+                # Use asyncio.wait_for to add timeout to the synchronous call
+                loop = asyncio.get_event_loop()
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: self.client.complete(
+                        messages=[
+                            SystemMessage(content=system_prompt),
+                            UserMessage(content=user_prompt)
+                        ],
+                        max_tokens=self.max_completion_tokens,
+                        temperature=0.2,
+                        top_p=0.1,
+                        presence_penalty=0.0,
+                        frequency_penalty=0.0,
+                        model=self.model_name
+                    )
+                )
                 
-                logger.info(f"Generated {len(rules)} rules")
-                return rules
+                content = response.choices[0].message.content
                 
-            except (json.JSONDecodeError, ValueError) as e:
-                logger.warning(f"Failed to parse JSON response, creating fallback rules: {e}")
-                # Create fallback rules from text
-                return self._parse_rules_from_text(content)
-                
-        except Exception as e:
-            logger.error(f"Error generating rules: {str(e)}")
-            raise e
+                # Extract JSON from response
+                try:
+                    # Find JSON in response
+                    start_idx = content.find('[')
+                    end_idx = content.rfind(']') + 1
+                    json_str = content[start_idx:end_idx]
+                    
+                    rules_data = json.loads(json_str)
+                    rules = [Rule(**rule) for rule in rules_data]
+                    
+                    logger.info(f"Generated {len(rules)} rules")
+                    return rules
+                    
+                except (json.JSONDecodeError, ValueError) as e:
+                    logger.warning(f"Failed to parse JSON response, creating fallback rules: {e}")
+                    # Create fallback rules from text
+                    return self._parse_rules_from_text(content)
+                    
+            except asyncio.TimeoutError:
+                logger.warning(f"Rules generation timed out on attempt {attempt + 1}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay * (attempt + 1))  # Exponential backoff
+                    continue
+                else:
+                    raise Exception("Rules generation timed out after all retry attempts")
+                    
+            except Exception as e:
+                logger.error(f"Error in rules generation attempt {attempt + 1}: {str(e)}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay * (attempt + 1))  # Exponential backoff
+                    continue
+                else:
+                    raise e
     
     async def generate_maintenance_schedule(self, chunks: List[Dict[str, Any]]) -> List[MaintenanceTask]:
         """Generate maintenance schedule from chunks"""
