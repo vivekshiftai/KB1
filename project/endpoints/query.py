@@ -40,6 +40,11 @@ async def query_pdf(request: QueryRequest):
                 detail=f"PDF '{request.pdf_name}' not found. Please upload the PDF first."
             )
         
+        # Also check if the images collection exists for this PDF
+        images_collection_name = f"{collection_name}_images"
+        has_images_collection = vector_db.collection_exists(images_collection_name)
+        logger.info(f"Images collection '{images_collection_name}' exists: {has_images_collection}")
+        
         # Check collection type to ensure we're querying a document collection
         collection_type = vector_db.get_collection_type(collection_name)
         logger.info(f"Collection '{collection_name}' type: {collection_type}")
@@ -48,10 +53,29 @@ async def query_pdf(request: QueryRequest):
         if collection_type == "image":
             logger.error(f"Collection '{collection_name}' is an image collection, not a document collection")
             logger.error(f"This suggests the PDF '{request.pdf_name}' was not uploaded correctly or the collection name is wrong")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Collection '{collection_name}' is an image collection. The PDF '{request.pdf_name}' may not have been uploaded correctly."
-            )
+            
+            # Try to find the correct document collection
+            logger.info(f"Attempting to find the correct document collection...")
+            
+            # Check if there's a document collection without the _images suffix
+            base_collection_name = collection_name.replace("_images", "")
+            if vector_db.collection_exists(base_collection_name):
+                base_type = vector_db.get_collection_type(base_collection_name)
+                logger.info(f"Found base collection '{base_collection_name}' with type: {base_type}")
+                if base_type == "document":
+                    collection_name = base_collection_name
+                    collection_type = base_type
+                    logger.info(f"Using base collection: '{collection_name}'")
+                else:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Collection '{collection_name}' is an image collection and base collection '{base_collection_name}' is not a document collection."
+                    )
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Collection '{collection_name}' is an image collection. The PDF '{request.pdf_name}' may not have been uploaded correctly."
+                )
         
         if collection_type == "unknown":
             logger.warning(f"Collection '{collection_name}' type is unknown, proceeding with caution")
