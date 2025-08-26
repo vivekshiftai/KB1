@@ -14,7 +14,7 @@ from chromadb.config import Settings as ChromaSettings
 from sentence_transformers import SentenceTransformer
 from datetime import datetime
 from config import settings
-from models.schemas import ChunkData, PDFListItem
+from models.schemas import ChunkData, PDFListItem, ImageData
 from utils.helpers import sanitize_filename
 
 logger = logging.getLogger(__name__)
@@ -92,19 +92,24 @@ class VectorDatabase:
             # Debug: Log chunk information
             total_images = 0
             total_tables = 0
+            total_embedded_images = 0
             
-            logger.info(f"Storing {len(chunks)} chunks with images and tables")
+            logger.info(f"Storing {len(chunks)} chunks with embedded images and tables")
             
             for i, chunk in enumerate(chunks):
                 # Log image and table information for each chunk
-                if chunk.images or chunk.tables:
-                    logger.info(f"Chunk {i} ('{chunk.heading}'): {len(chunk.images)} images, {len(chunk.tables)} tables")
-                    if chunk.images:
-                        logger.info(f"  Images: {chunk.images}")
+                if chunk.image_paths or chunk.embedded_images or chunk.tables:
+                    logger.info(f"Chunk {i} ('{chunk.heading}'): {len(chunk.image_paths)} image paths, {len(chunk.embedded_images)} embedded images, {len(chunk.tables)} tables")
+                    if chunk.image_paths:
+                        logger.info(f"  Image paths: {chunk.image_paths}")
+                    if chunk.embedded_images:
+                        logger.info(f"  Embedded images: {[img.filename for img in chunk.embedded_images]}")
+                        total_embedded_images += len(chunk.embedded_images)
                     if chunk.tables:
                         logger.info(f"  Tables: {chunk.tables}")
                 
-                total_images += len(chunk.images)
+                total_images += len(chunk.image_paths)
+                total_embedded_images += len(chunk.embedded_images)
                 total_tables += len(chunk.tables)
                 # Create combined text for embedding
                 combined_text = f"{chunk.heading}\n{chunk.text}"
@@ -122,10 +127,21 @@ class VectorDatabase:
                 if len(chunk.text) < 100:
                     logger.warning(f"Chunk {i} has very short text: '{chunk.text}'")
                 
+                # Convert embedded images to serializable format
+                embedded_images_data = []
+                for img in chunk.embedded_images:
+                    embedded_images_data.append({
+                        "filename": img.filename,
+                        "data": img.data,  # Base64 data
+                        "mime_type": img.mime_type,
+                        "size": img.size
+                    })
+                
                 # Prepare metadata
                 metadata = {
                     "heading": chunk.heading,
-                    "images": json.dumps(chunk.images),
+                    "image_paths": json.dumps(chunk.image_paths),
+                    "embedded_images": json.dumps(embedded_images_data),
                     "tables": json.dumps(chunk.tables),
                     "chunk_index": i,
                     "created_at": datetime.now().isoformat()
@@ -141,7 +157,8 @@ class VectorDatabase:
             )
             
             logger.info(f"Successfully stored {len(chunks)} chunks")
-            logger.info(f"Total images stored: {total_images}")
+            logger.info(f"Total image paths stored: {total_images}")
+            logger.info(f"Total embedded images stored: {total_embedded_images}")
             logger.info(f"Total tables stored: {total_tables}")
             return len(chunks)
             
@@ -391,20 +408,36 @@ class VectorDatabase:
             total_tables = 0
             
             for i in range(len(results["documents"][0])):
-                # Parse images and tables from metadata
-                images = json.loads(results["metadatas"][0][i].get("images", "[]"))
+                # Parse image paths, embedded images, and tables from metadata
+                image_paths = json.loads(results["metadatas"][0][i].get("image_paths", "[]"))
+                embedded_images_data = json.loads(results["metadatas"][0][i].get("embedded_images", "[]"))
                 tables = json.loads(results["metadatas"][0][i].get("tables", "[]"))
                 
+                # Convert embedded images back to ImageData objects
+                embedded_images = []
+                for img_data in embedded_images_data:
+                    try:
+                        embedded_images.append(ImageData(
+                            filename=img_data["filename"],
+                            data=img_data["data"],  # Base64 data
+                            mime_type=img_data["mime_type"],
+                            size=img_data["size"]
+                        ))
+                    except Exception as e:
+                        logger.warning(f"Error parsing embedded image data: {str(e)}")
+                
                 # Log image and table information
-                if images or tables:
+                if image_paths or embedded_images or tables:
                     heading = results["metadatas"][0][i].get("heading", f"Chunk {i}")
-                    logger.info(f"Result {i} ('{heading}'): {len(images)} images, {len(tables)} tables")
-                    if images:
-                        logger.info(f"  Images: {images}")
+                    logger.info(f"Result {i} ('{heading}'): {len(image_paths)} image paths, {len(embedded_images)} embedded images, {len(tables)} tables")
+                    if image_paths:
+                        logger.info(f"  Image paths: {image_paths}")
+                    if embedded_images:
+                        logger.info(f"  Embedded images: {[img.filename for img in embedded_images]}")
                     if tables:
                         logger.info(f"  Tables: {tables}")
                 
-                total_images += len(images)
+                total_images += len(embedded_images)
                 total_tables += len(tables)
                 
                 # Skip image chunks
@@ -417,7 +450,8 @@ class VectorDatabase:
                     "document": results["documents"][0][i],
                     "metadata": results["metadatas"][0][i],
                     "distance": results["distances"][0][i],
-                    "images": images,
+                    "image_paths": image_paths,
+                    "embedded_images": embedded_images,
                     "tables": tables
                 }
                 formatted_results.append(result)

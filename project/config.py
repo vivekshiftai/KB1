@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     table_enable: bool = True
     image_enable: bool = True  # Enable image extraction
     
+    # Image Compression Settings
+    image_compression_enabled: bool = True  # Enable image compression
+    image_max_dimension: int = 1200  # Maximum width/height for compression
+    image_quality: int = 85  # JPEG quality (85 is good balance)
+    image_max_size: int = 1024 * 1024  # 1MB limit before compression
+    
     # CPU Optimization Settings
     force_cpu: bool = True  # Force all operations to use CPU
     torch_device: str = "cpu"  # PyTorch device setting

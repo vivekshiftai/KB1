@@ -588,6 +588,25 @@ Ensure all tasks are practical, actionable, and based on the actual content in t
                 json_str = content[start_idx:end_idx]
                 
                 tasks_data = json.loads(json_str)
+                
+                # Convert frequency text to numeric values
+                for task in tasks_data:
+                    frequency_text = task.get('frequency', '').lower()
+                    if 'daily' in frequency_text or 'day' in frequency_text:
+                        task['frequency'] = 1
+                    elif 'weekly' in frequency_text or 'week' in frequency_text:
+                        task['frequency'] = 7
+                    elif 'monthly' in frequency_text or 'month' in frequency_text:
+                        task['frequency'] = 30
+                    elif 'quarterly' in frequency_text or 'quarter' in frequency_text:
+                        task['frequency'] = 90
+                    elif 'semi-annually' in frequency_text or 'semi-annual' in frequency_text or '6 month' in frequency_text:
+                        task['frequency'] = 180
+                    elif 'annually' in frequency_text or 'yearly' in frequency_text or 'annual' in frequency_text:
+                        task['frequency'] = 365
+                    else:
+                        task['frequency'] = 1  # Default to daily (1) if unclear or not found
+                
                 tasks = [MaintenanceTask(**task) for task in tasks_data]
                 
                 logger.info(f"Generated {len(tasks)} maintenance tasks")
@@ -887,12 +906,27 @@ Ensure all safety information is:
         for line in lines:
             line_lower = line.lower()
             if any(word in line_lower for word in ['maintenance', 'check', 'inspect', 'clean', 'lubricate', 'calibrate', 'test', 'monitor']):
-                # Determine frequency
-                frequency = "monthly"  # default
+                # Determine frequency and convert to numeric values
+                frequency = 1  # default to daily
+                frequency_text = "daily"
                 for freq in frequencies:
                     if freq in line_lower:
-                        frequency = freq
+                        frequency_text = freq
                         break
+                
+                # Convert frequency text to numeric values
+                if 'daily' in frequency_text or 'day' in frequency_text:
+                    frequency = 1
+                elif 'weekly' in frequency_text or 'week' in frequency_text:
+                    frequency = 7
+                elif 'monthly' in frequency_text or 'month' in frequency_text:
+                    frequency = 30
+                elif 'quarterly' in frequency_text or 'quarter' in frequency_text:
+                    frequency = 90
+                elif 'semi-annually' in frequency_text or 'semi-annual' in frequency_text or '6 month' in frequency_text:
+                    frequency = 180
+                elif 'annually' in frequency_text or 'yearly' in frequency_text or 'annual' in frequency_text:
+                    frequency = 365
                 
                 # Determine category
                 category = "general"  # default
@@ -910,7 +944,7 @@ Ensure all safety information is:
                 
                 tasks.append(MaintenanceTask(
                     task=line.strip(),
-                    frequency=frequency,
+                    frequency=str(frequency),
                     category=category,
                     description=line.strip(),
                     priority=priority,

@@ -181,7 +181,10 @@ async def query_pdf(request: QueryRequest):
                 
                 if chunk_used:
                     used_chunks.append(chunk)
-                    logger.info(f"Found used chunk: '{heading}' with {len(chunk.get('images', []))} images, {len(chunk.get('tables', []))} tables")
+                    chunk_images = chunk.get("images", [])
+                    chunk_embedded_images = chunk.get("embedded_images", [])
+                    chunk_tables = chunk.get("tables", [])
+                    logger.info(f"Found used chunk: '{heading}' with {len(chunk_images)} old images, {len(chunk_embedded_images)} embedded images, {len(chunk_tables)} tables")
             except Exception as e:
                 logger.warning(f"Error processing chunk for image collection: {str(e)}")
                 continue
@@ -200,12 +203,16 @@ async def query_pdf(request: QueryRequest):
         all_tables = []
         
         for i, chunk in enumerate(used_chunks):
-            chunk_images = chunk.get("images", [])
+            # Handle both old format (images) and new format (embedded_images)
+            chunk_images = chunk.get("images", [])  # Old format
+            chunk_embedded_images = chunk.get("embedded_images", [])  # New format
             chunk_tables = chunk.get("tables", [])
             
-            logger.info(f"Used chunk {i}: {len(chunk_images)} images, {len(chunk_tables)} tables")
+            logger.info(f"Used chunk {i}: {len(chunk_images)} old images, {len(chunk_embedded_images)} embedded images, {len(chunk_tables)} tables")
             if chunk_images:
-                logger.info(f"Used chunk {i} images: {chunk_images}")
+                logger.info(f"Used chunk {i} old images: {chunk_images}")
+            if chunk_embedded_images:
+                logger.info(f"Used chunk {i} embedded images: {[img.filename if hasattr(img, 'filename') else str(img) for img in chunk_embedded_images]}")
             if chunk_tables:
                 logger.info(f"Used chunk {i} tables: {chunk_tables}")
             
@@ -219,10 +226,17 @@ async def query_pdf(request: QueryRequest):
         logger.info(f"Total unique image paths from used chunks: {len(all_image_paths)}")
         logger.info(f"Image paths: {all_image_paths}")
         
-        # Step 3: Fetch actual image data from images collection using image paths
+        # Step 3: Collect embedded images and fetch remaining images from collection
         from models.schemas import ImageData
         image_data_list = []
         
+        # First, collect all embedded images from chunks
+        for chunk in used_chunks:
+            chunk_embedded_images = chunk.get("embedded_images", [])
+            image_data_list.extend(chunk_embedded_images)
+            logger.info(f"Added {len(chunk_embedded_images)} embedded images from chunk")
+        
+        # Then, fetch any remaining images that weren't embedded (from old format or large images)
         if all_image_paths:
             logger.info(f"Fetching {len(all_image_paths)} images from images collection...")
             
@@ -292,7 +306,7 @@ async def query_pdf(request: QueryRequest):
             logger.info("No image paths found in used chunks")
         
         logger.info(f"Total unique image paths from used chunks: {len(all_image_paths)}")
-        logger.info(f"Successfully fetched {len(image_data_list)} images from images collection")
+        logger.info(f"Successfully collected {len(image_data_list)} images (embedded + fetched)")
         logger.info(f"Total unique tables from used chunks: {len(all_tables)}")
         if all_tables:
             logger.info(f"Tables from used chunks: {all_tables}")

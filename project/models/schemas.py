@@ -100,8 +100,9 @@ class StandardResponse(BaseModel):
 class ChunkData(BaseModel):
     heading: str
     text: str
-    images: List[str]  # Image paths from MinerU output
-    tables: List[str]
+    image_paths: List[str] = []  # Original image paths for reference
+    embedded_images: List[ImageData] = []  # Actual embedded image data
+    tables: List[str] = []
 
 class PDFDeleteResponse(BaseModel):
     success: bool
