@@ -16,6 +16,8 @@ from typing import List, Dict, Any
 from models.schemas import ChunkData, ImageData
 from config import settings
 
+logger = logging.getLogger(__name__)
+
 # Try to import PIL for image compression
 try:
     from PIL import Image, ImageOps
@@ -24,8 +26,6 @@ try:
 except ImportError:
     PIL_AVAILABLE = False
     logger.warning("PIL (Pillow) not available - image compression will be disabled")
-
-logger = logging.getLogger(__name__)
 
 class MarkdownChunker:
     def __init__(self):
