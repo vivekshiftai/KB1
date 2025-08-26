@@ -20,6 +20,9 @@ PyMuPDF==1.23.8
 magic-pdf==0.6.2
 Pillow==10.1.0
 
+# Image processing
+opencv-python>=4.8.0
+
 # Data processing
 numpy>=1.21.0
 regex>=2022.3.15
