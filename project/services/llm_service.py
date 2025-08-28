@@ -21,7 +21,7 @@ class LLMService:
     def __init__(self):
         # Azure AI Configuration
         self.endpoint = "https://chgai.services.ai.azure.com/models"
-        self.model_name = "Llama-3.2-90B-Vision-Instruct"
+        self.model_name = "Llama-4-Maverick-17B-128E-Instruct-FP8"
         self.api_version = "2024-05-01-preview"
         
         # Validate Azure AI key
