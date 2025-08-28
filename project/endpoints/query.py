@@ -85,12 +85,12 @@ async def query_pdf(request: QueryRequest):
         if collection_type == "unknown":
             logger.warning(f"Collection '{collection_name}' type is unknown, proceeding with caution")
         
-        # Query vector database
+        # Query vector database - fetch only top 3 chunks
         logger.info("Querying vector database...")
         chunks = await vector_db.query_chunks(
             collection_name=collection_name,
             query=request.query,
-            top_k=request.top_k
+            top_k=3  # Always fetch only top 3 chunks
         )
         
         # Debug: Log chunk structure
@@ -114,7 +114,7 @@ async def query_pdf(request: QueryRequest):
                 chunks = await vector_db.query_chunks(
                     collection_name=collection_name,
                     query="",  # Empty query to get general content
-                    top_k=3
+                    top_k=3  # Keep consistent with main query
                 )
                 if chunks:
                     logger.info(f"Retrieved {len(chunks)} general chunks as fallback")
@@ -229,12 +229,26 @@ async def query_pdf(request: QueryRequest):
         # Step 3: Collect embedded images and fetch remaining images from collection
         from models.schemas import ImageData
         image_data_list = []
+        seen_image_filenames = set()  # Track seen image filenames to avoid duplicates
         
-        # First, collect all embedded images from chunks
+        # First, collect all embedded images from chunks (with deduplication)
         for chunk in used_chunks:
             chunk_embedded_images = chunk.get("embedded_images", [])
-            image_data_list.extend(chunk_embedded_images)
-            logger.info(f"Added {len(chunk_embedded_images)} embedded images from chunk")
+            for img in chunk_embedded_images:
+                if hasattr(img, 'filename'):
+                    filename = img.filename
+                else:
+                    # Fallback for different image object structures
+                    filename = str(img)
+                
+                if filename not in seen_image_filenames:
+                    image_data_list.append(img)
+                    seen_image_filenames.add(filename)
+                    logger.info(f"Added embedded image: {filename}")
+                else:
+                    logger.info(f"Skipped duplicate embedded image: {filename}")
+            
+            logger.info(f"Processed {len(chunk_embedded_images)} embedded images from chunk, added {len([img for img in chunk_embedded_images if (hasattr(img, 'filename') and img.filename not in seen_image_filenames) or (not hasattr(img, 'filename'))])} unique images")
         
         # Then, fetch any remaining images that weren't embedded (from old format or large images)
         if all_image_paths:
@@ -287,15 +301,22 @@ async def query_pdf(request: QueryRequest):
                             continue
                     
                     if image_data:
-                        # Create ImageData object
-                        image_obj = ImageData(
-                            filename=image_data["metadata"]["filename"],
-                            data=image_data["data"],  # Base64 encoded image
-                            mime_type=image_data["content_type"],
-                            size=image_data["metadata"]["size"]
-                        )
-                        image_data_list.append(image_obj)
-                        logger.info(f"Fetched image: {image_path} ({image_data['metadata']['size']} bytes) from {successful_collection}")
+                        filename = image_data["metadata"]["filename"]
+                        
+                        # Check if this image is already in the list (avoid duplicates)
+                        if filename not in seen_image_filenames:
+                            # Create ImageData object
+                            image_obj = ImageData(
+                                filename=filename,
+                                data=image_data["data"],  # Base64 encoded image
+                                mime_type=image_data["content_type"],
+                                size=image_data["metadata"]["size"]
+                            )
+                            image_data_list.append(image_obj)
+                            seen_image_filenames.add(filename)
+                            logger.info(f"Fetched image: {image_path} ({image_data['metadata']['size']} bytes) from {successful_collection}")
+                        else:
+                            logger.info(f"Skipped duplicate fetched image: {filename}")
                     else:
                         logger.warning(f"Image not found in any collection: {image_path}")
                         logger.warning(f"Tried collections: {possible_collection_names}")
@@ -306,7 +327,7 @@ async def query_pdf(request: QueryRequest):
             logger.info("No image paths found in used chunks")
         
         logger.info(f"Total unique image paths from used chunks: {len(all_image_paths)}")
-        logger.info(f"Successfully collected {len(image_data_list)} images (embedded + fetched)")
+        logger.info(f"Successfully collected {len(image_data_list)} unique images (embedded + fetched, duplicates removed)")
         logger.info(f"Total unique tables from used chunks: {len(all_tables)}")
         if all_tables:
             logger.info(f"Tables from used chunks: {all_tables}")

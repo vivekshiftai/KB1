@@ -234,8 +234,19 @@ Unfortunately, I don't have access to specific documentation content at the mome
 
 Provide a clear answer. At the end, add "REFERENCES: General knowledge"."""
         else:
-            # Truncate chunks to fit within token limit
-            selected_chunks = self.truncate_chunks_to_fit_context(chunks, system_prompt, user_prompt_template)
+            # Check content length and use appropriate number of chunks
+            total_content_length = sum(len(chunk.get('document', '')) for chunk in chunks)
+            logger.info(f"Total content length: {total_content_length} characters")
+            
+            # If content is too long, use only 2 chunks
+            if total_content_length > 8000:  # Threshold for "too long"
+                logger.info("Content too long, using only 2 chunks")
+                selected_chunks = chunks[:2]
+            else:
+                # Use all chunks (up to 3)
+                selected_chunks = chunks
+            
+            logger.info(f"Selected {len(selected_chunks)} chunks for processing")
             
             if not selected_chunks:
                 logger.warning("No chunks could fit within token limit, using first chunk with heavy truncation")
@@ -466,8 +477,8 @@ Ensure all rules are:
             raise e
     
     async def generate_maintenance_schedule(self, chunks: List[Dict[str, Any]]) -> List[MaintenanceTask]:
-        """Generate maintenance schedule from chunks"""
-        logger.info(f"Generating maintenance schedule from {len(chunks)} chunks")
+        """Generate maintenance schedule from chunks in batches of 3"""
+        logger.info(f"Generating maintenance schedule from {len(chunks)} chunks in batches of 3")
         
         # System prompt
         system_prompt = """You are a senior maintenance engineer with 20+ years of experience in industrial equipment maintenance. 
@@ -524,101 +535,122 @@ Focus on extracting:
 
 Ensure all tasks are practical, actionable, and based on the actual content in the provided documentation."""
         
-        # Truncate chunks to fit within token limit
-        selected_chunks = self.truncate_chunks_to_fit_context(chunks, system_prompt, user_prompt_template)
+        # Process chunks in batches of 3
+        batch_size = 3
+        all_maintenance_tasks = []
         
-        if not selected_chunks:
-            logger.warning("No chunks could fit within token limit")
-            return []
-        
-        # Prepare context from selected chunks
-        context_parts = []
-        for chunk in selected_chunks:
+        for i in range(0, len(chunks), batch_size):
+            batch_chunks = chunks[i:i + batch_size]
+            logger.info(f"Processing batch {i//batch_size + 1}: chunks {i+1}-{min(i+batch_size, len(chunks))}")
+            
+            # Truncate chunks to fit within token limit
+            selected_chunks = self.truncate_chunks_to_fit_context(batch_chunks, system_prompt, user_prompt_template)
+            
+            if not selected_chunks:
+                logger.warning(f"No chunks could fit within token limit for batch {i//batch_size + 1}")
+                continue
+            
+            # Prepare context from selected chunks including tables
+            context_parts = []
+            for chunk in selected_chunks:
+                try:
+                    # Handle both possible chunk structures
+                    if "metadata" in chunk and "document" in chunk:
+                        # Vector DB format
+                        heading = chunk.get("metadata", {}).get("heading", "")
+                        content = chunk.get("document", "")
+                        tables = chunk.get("tables", [])
+                    else:
+                        # Fallback format
+                        heading = chunk.get("heading", "")
+                        content = chunk.get("text", chunk.get("content", ""))
+                        tables = chunk.get("tables", [])
+                    
+                    # Add content
+                    if content:
+                        context_parts.append(f"**{heading}**\n{content}")
+                    
+                    # Add tables if present
+                    if tables:
+                        for table in tables:
+                            context_parts.append(f"**Table from {heading}:**\n{table}")
+                            
+                except Exception as e:
+                    logger.warning(f"Error processing chunk in maintenance generation: {str(e)}")
+                    continue
+            
+            if not context_parts:
+                logger.warning(f"No valid context could be extracted for batch {i//batch_size + 1}")
+                continue
+            
+            context = "\n\n".join(context_parts)
+            
+            # Format the user prompt with context
             try:
-                # Handle both possible chunk structures
-                if "metadata" in chunk and "document" in chunk:
-                    # Vector DB format
-                    heading = chunk.get("metadata", {}).get("heading", "")
-                    content = chunk.get("document", "")
-                else:
-                    # Fallback format
-                    heading = chunk.get("heading", "")
-                    content = chunk.get("text", chunk.get("content", ""))
-                
-                if content:
-                    context_parts.append(f"**{heading}**\n{content}")
+                user_prompt = user_prompt_template.format(context=context)
             except Exception as e:
-                logger.warning(f"Error processing chunk in maintenance generation: {str(e)}")
+                logger.error(f"Error formatting user prompt in maintenance generation: {str(e)}")
+                # Fallback to simple prompt
+                user_prompt = f"Please generate maintenance tasks based on this context:\n\n{context}"
+            
+            try:
+                response = self.client.complete(
+                    messages=[
+                        SystemMessage(content=system_prompt),
+                        UserMessage(content=user_prompt)
+                    ],
+                    max_tokens=self.max_completion_tokens,
+                    temperature=0.1,
+                    top_p=0.1,
+                    presence_penalty=0.0,
+                    frequency_penalty=0.0,
+                    model=self.model_name
+                )
+                
+                content = response.choices[0].message.content
+                
+                # Extract JSON from response
+                try:
+                    start_idx = content.find('[')
+                    end_idx = content.rfind(']') + 1
+                    json_str = content[start_idx:end_idx]
+                    
+                    tasks_data = json.loads(json_str)
+                    
+                    # Convert frequency text to numeric values
+                    for task in tasks_data:
+                        frequency_text = task.get('frequency', '').lower()
+                        if 'daily' in frequency_text or 'day' in frequency_text:
+                            task['frequency'] = 1
+                        elif 'weekly' in frequency_text or 'week' in frequency_text:
+                            task['frequency'] = 7
+                        elif 'monthly' in frequency_text or 'month' in frequency_text:
+                            task['frequency'] = 30
+                        elif 'quarterly' in frequency_text or 'quarter' in frequency_text:
+                            task['frequency'] = 90
+                        elif 'semi-annually' in frequency_text or 'semi-annual' in frequency_text or '6 month' in frequency_text:
+                            task['frequency'] = 180
+                        elif 'annually' in frequency_text or 'yearly' in frequency_text or 'annual' in frequency_text:
+                            task['frequency'] = 365
+                        else:
+                            task['frequency'] = 1  # Default to daily (1) if unclear or not found
+                    
+                    batch_tasks = [MaintenanceTask(**task) for task in tasks_data]
+                    all_maintenance_tasks.extend(batch_tasks)
+                    
+                    logger.info(f"Generated {len(batch_tasks)} maintenance tasks from batch {i//batch_size + 1}")
+                    
+                except (json.JSONDecodeError, ValueError) as e:
+                    logger.warning(f"Failed to parse JSON response for batch {i//batch_size + 1}: {e}")
+                    batch_fallback = self._parse_maintenance_from_text(content)
+                    all_maintenance_tasks.extend(batch_fallback)
+                    
+            except Exception as e:
+                logger.error(f"Error generating maintenance schedule for batch {i//batch_size + 1}: {str(e)}")
                 continue
         
-        if not context_parts:
-            logger.warning("No valid context could be extracted for maintenance generation")
-            return []
-        
-        context = "\n\n".join(context_parts)
-        
-        # Format the user prompt with context
-        try:
-            user_prompt = user_prompt_template.format(context=context)
-        except Exception as e:
-            logger.error(f"Error formatting user prompt in maintenance generation: {str(e)}")
-            # Fallback to simple prompt
-            user_prompt = f"Please generate maintenance tasks based on this context:\n\n{context}"
-        
-        try:
-            response = self.client.complete(
-                messages=[
-                    SystemMessage(content=system_prompt),
-                    UserMessage(content=user_prompt)
-                ],
-                max_tokens=self.max_completion_tokens,
-                temperature=0.1,
-                top_p=0.1,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
-                model=self.model_name
-            )
-            
-            content = response.choices[0].message.content
-            
-            # Extract JSON from response
-            try:
-                start_idx = content.find('[')
-                end_idx = content.rfind(']') + 1
-                json_str = content[start_idx:end_idx]
-                
-                tasks_data = json.loads(json_str)
-                
-                # Convert frequency text to numeric values
-                for task in tasks_data:
-                    frequency_text = task.get('frequency', '').lower()
-                    if 'daily' in frequency_text or 'day' in frequency_text:
-                        task['frequency'] = 1
-                    elif 'weekly' in frequency_text or 'week' in frequency_text:
-                        task['frequency'] = 7
-                    elif 'monthly' in frequency_text or 'month' in frequency_text:
-                        task['frequency'] = 30
-                    elif 'quarterly' in frequency_text or 'quarter' in frequency_text:
-                        task['frequency'] = 90
-                    elif 'semi-annually' in frequency_text or 'semi-annual' in frequency_text or '6 month' in frequency_text:
-                        task['frequency'] = 180
-                    elif 'annually' in frequency_text or 'yearly' in frequency_text or 'annual' in frequency_text:
-                        task['frequency'] = 365
-                    else:
-                        task['frequency'] = 1  # Default to daily (1) if unclear or not found
-                
-                tasks = [MaintenanceTask(**task) for task in tasks_data]
-                
-                logger.info(f"Generated {len(tasks)} maintenance tasks")
-                return tasks
-                
-            except (json.JSONDecodeError, ValueError) as e:
-                logger.warning(f"Failed to parse JSON response: {e}")
-                return self._parse_maintenance_from_text(content)
-                
-        except Exception as e:
-            logger.error(f"Error generating maintenance schedule: {str(e)}")
-            raise e
+        logger.info(f"Generated total {len(all_maintenance_tasks)} maintenance tasks from all batches")
+        return all_maintenance_tasks
     
     async def generate_safety_information(self, chunks: List[Dict[str, Any]]) -> List[SafetyInfo]:
         """Generate safety information from chunks"""
