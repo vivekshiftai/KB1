@@ -353,7 +353,9 @@ Provide a clear answer. At the end, add "REFERENCES: General knowledge"."""
         system_prompt = """You are a senior IoT systems engineer with 15+ years of experience in industrial automation and monitoring systems.
 You specialize in creating precise, actionable IoT monitoring rules from technical documentation.
 Your expertise includes sensor networks, threshold monitoring, predictive analytics, and automated response systems.
-You understand the critical importance of accurate thresholds and clear consequences for equipment reliability and safety."""
+You have deep knowledge of IoT telemetry standards, sensor data formats, and industrial IoT platforms.
+You understand the critical importance of accurate thresholds and clear consequences for equipment reliability and safety.
+You know how to map equipment parameters to standard IoT telemetry field names that work with platforms like Azure IoT Hub, AWS IoT, and industrial SCADA systems."""
         
         # User prompt template with detailed requirements
         user_prompt_template = """Analyze the provided technical documentation sections and extract specific IoT monitoring rules.
@@ -366,36 +368,62 @@ Please generate detailed IoT monitoring rules in JSON format with the following 
   {{
     "rule_name": "High Temperature Alert",
     "threshold": "Temperature > 85°C",
-    "metric": "temperature",
-    "metric_value": "85°C",
+    "metric": "temperature_celsius",
+    "metric_value": "85",
     "description": "Monitor equipment temperature to prevent overheating and thermal damage",
     "consequence": "Equipment shutdown, thermal damage, reduced lifespan, safety hazard"
   }}
 ]
 
-IMPORTANT REQUIREMENTS:
+CRITICAL IOT TELEMETRY REQUIREMENTS:
 1. **Rule Name**: Be specific and descriptive (e.g., "High Temperature Alert" not just "Temperature Rule")
 2. **Threshold**: Use exact numerical values with units (e.g., "Temperature > 85°C", "Pressure < 50 PSI")
-3. **Metric**: The specific parameter being monitored (temperature, pressure, vibration, speed, flow, level, voltage, current, etc.)
-4. **Metric Value**: The exact numerical threshold value with units
+3. **Metric**: MUST use standardized IoT telemetry field names that match sensor data:
+   - temperature_celsius, temperature_fahrenheit, temperature_kelvin
+   - pressure_psi, pressure_bar, pressure_pascal, pressure_mbar
+   - vibration_mm_s, vibration_g, vibration_hz
+   - speed_rpm, speed_mph, speed_kmh
+   - flow_lpm, flow_gpm, flow_cfm
+   - level_percent, level_mm, level_inches
+   - voltage_volts, current_amps, power_watts, power_kw
+   - humidity_percent, humidity_rh
+   - oil_level_percent, oil_pressure_psi
+   - belt_tension_newtons, belt_speed_rpm
+   - motor_current_amps, motor_voltage_volts
+   - pump_flow_lpm, pump_pressure_psi
+   - conveyor_speed_rpm, conveyor_load_percent
+   - bearing_temperature_celsius, bearing_vibration_mm_s
+   - hydraulic_pressure_psi, hydraulic_temperature_celsius
+   - pneumatic_pressure_psi, pneumatic_flow_cfm
+   - electrical_frequency_hz, electrical_power_factor
+   - equipment_status (0=off, 1=on, 2=error, 3=maintenance)
+   - maintenance_hours, operating_hours, cycle_count
+4. **Metric Value**: MUST be ONLY the numerical value without units (e.g., "85" not "85°C", "50" not "50 PSI")
 5. **Description**: Clear explanation of what this rule monitors and why it's important
 6. **Consequence**: What happens if the rule is exceeded (equipment damage, safety issues, performance degradation, etc.)
 
+IOT PLATFORM INTEGRATION REQUIREMENTS:
+- **Metric names** must match standard IoT sensor field names used in platforms like Azure IoT Hub, AWS IoT, Google Cloud IoT, or industrial SCADA systems
+- **Metric values** must be pure numbers for easy comparison in IoT rule engines
+- **Units** are specified in the metric name, not in the metric_value
+- **Thresholds** should include the comparison operator and units for human readability
+
 Focus on extracting:
-- Temperature monitoring thresholds
-- Pressure limits and ranges
-- Vibration and speed parameters
-- Flow and level measurements
-- Electrical parameters (voltage, current)
-- Performance indicators
-- Operational status conditions
-- Equipment health metrics
+- Temperature monitoring thresholds (bearing, motor, hydraulic, pneumatic, electrical)
+- Pressure limits and ranges (hydraulic, pneumatic, oil, water, air)
+- Vibration and speed parameters (motors, pumps, conveyors, bearings)
+- Flow and level measurements (liquids, gases, materials)
+- Electrical parameters (voltage, current, power, frequency)
+- Performance indicators (efficiency, load, status, operating hours)
+- Operational status conditions (on/off, error states, maintenance modes)
+- Equipment health metrics (wear, degradation, remaining life)
 
 Ensure all rules are:
 - Based on actual numerical values from the documentation
-- Practical and implementable in IoT systems
+- Practical and implementable in IoT systems with standard sensors
 - Clear about consequences when exceeded
-- Specific to the equipment or system being monitored"""
+- Specific to the equipment or system being monitored
+- Compatible with IoT telemetry data formats"""
         
         # Truncate chunks to fit within token limit
         selected_chunks = self.truncate_chunks_to_fit_context(chunks, system_prompt, user_prompt_template)
