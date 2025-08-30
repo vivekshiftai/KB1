@@ -484,10 +484,7 @@ Ensure all rules are:
         system_prompt = """You are a senior maintenance engineer with 20+ years of experience in industrial equipment maintenance. 
 You specialize in creating comprehensive, detailed maintenance schedules from technical documentation.
 Your expertise includes preventive maintenance, predictive maintenance, and equipment reliability optimization.
-You understand the critical importance of proper maintenance procedures for equipment safety and performance.
-
-CRITICAL: You must respond with ONLY valid JSON format. Do not include any explanatory text before or after the JSON array. 
-The response must be a properly formatted JSON array that can be parsed directly by json.loads()."""
+You understand the critical importance of proper maintenance procedures for equipment safety and performance."""
         
         # User prompt template with detailed requirements
         user_prompt_template = """Analyze the provided technical documentation sections and extract comprehensive maintenance information.
@@ -495,9 +492,7 @@ The response must be a properly formatted JSON array that can be parsed directly
 Context:
 {context}
 
-IMPORTANT: Respond with ONLY a valid JSON array. Do not include any explanatory text, introductions, or conclusions.
-
-Generate detailed maintenance tasks in this exact JSON format:
+Please generate detailed maintenance tasks in JSON format with the following structure:
 [
   {{
     "task": "Check hydraulic oil level in main reservoir",
@@ -511,26 +506,34 @@ Generate detailed maintenance tasks in this exact JSON format:
   }}
 ]
 
-JSON FORMAT REQUIREMENTS:
-- Start with [ and end with ]
-- Each task object must be enclosed in {{ }}
-- All field names must be in double quotes
-- All string values must be in double quotes
-- Use commas to separate fields and objects
-- No trailing commas before closing brackets
-- No explanatory text before or after the JSON array
+IMPORTANT REQUIREMENTS:
+1. **Task Name**: Be specific and descriptive (e.g., "Check hydraulic oil level" not just "Check oil")
+2. **Frequency**: Use specific intervals (daily, weekly, monthly, quarterly, semi-annually, annually, as-needed)
+3. **Category**: Choose from: lubrication, inspection, cleaning, calibration, safety, performance, electrical, mechanical, preventive, predictive
+4. **Description**: Provide detailed step-by-step instructions including:
+   - What to check/inspect
+   - How to perform the task
+   - What to look for (acceptable ranges, signs of wear, etc.)
+   - What actions to take if issues are found
+5. **Priority**: high, medium, or low based on:
+   - Safety implications
+   - Equipment criticality
+   - Impact on production
+6. **Estimated Duration**: Realistic time estimate for the task
+7. **Required Tools**: List specific tools, equipment, or materials needed
+8. **Safety Notes**: Any safety precautions, PPE requirements, or warnings
 
-FIELD REQUIREMENTS:
-1. **task**: Specific task name (e.g., "Check hydraulic oil level" not just "Check oil")
-2. **frequency**: Use: daily, weekly, monthly, quarterly, semi-annually, annually, as-needed
-3. **category**: Choose from: lubrication, inspection, cleaning, calibration, safety, performance, electrical, mechanical, preventive, predictive
-4. **description**: Detailed step-by-step instructions
-5. **priority**: high, medium, or low
-6. **estimated_duration**: Realistic time estimate (e.g., "5 minutes", "30 minutes")
-7. **required_tools**: Specific tools, equipment, or materials needed
-8. **safety_notes**: Safety precautions, PPE requirements, or warnings
+Focus on extracting:
+- Preventive maintenance procedures
+- Inspection and monitoring tasks
+- Cleaning and housekeeping activities
+- Lubrication requirements
+- Calibration and adjustment procedures
+- Safety checks and procedures
+- Performance monitoring tasks
+- Equipment-specific maintenance requirements
 
-Focus on extracting practical, actionable maintenance tasks from the provided documentation."""
+Ensure all tasks are practical, actionable, and based on the actual content in the provided documentation."""
         
         # Process chunks in batches of 3
         batch_size = 3
@@ -606,86 +609,42 @@ Focus on extracting practical, actionable maintenance tasks from the provided do
                 
                 content = response.choices[0].message.content
                 
-                # Log the full response for debugging
-                logger.info(f"Full LLM response for batch {i//batch_size + 1}:")
-                logger.info(f"Response length: {len(content)} characters")
-                logger.info(f"Response content: {content}")
-                
-                # Extract JSON from response with improved parsing
+                # Extract JSON from response
                 try:
-                    
-                    # Try to find JSON array in the response
+                    # Find JSON in response
                     start_idx = content.find('[')
                     end_idx = content.rfind(']') + 1
-                    
-                    if start_idx == -1 or end_idx == 0:
-                        logger.warning(f"No JSON array found in response for batch {i//batch_size + 1}")
-                        batch_fallback = self._parse_maintenance_from_text(content)
-                        all_maintenance_tasks.extend(batch_fallback)
-                        continue
-                    
                     json_str = content[start_idx:end_idx]
-                    logger.info(f"Extracted JSON string: {json_str[:500]}...")
-                    
-                    # Validate JSON structure before cleaning
-                    if not self._is_valid_json_structure(json_str):
-                        logger.warning(f"Invalid JSON structure detected for batch {i//batch_size + 1}, using fallback")
-                        batch_fallback = self._parse_maintenance_from_text(content)
-                        all_maintenance_tasks.extend(batch_fallback)
-                        continue
-                    
-                    # Clean up the JSON string - remove any malformed quotes or escaped characters
-                    json_str = self._clean_json_string(json_str)
                     
                     tasks_data = json.loads(json_str)
                     
-                    # Validate and clean each task
-                    cleaned_tasks = []
+                    # Convert frequency text to numeric values
                     for task in tasks_data:
-                        try:
-                            # Clean task data - remove any raw JSON strings
-                            cleaned_task = self._clean_task_data(task)
-                            
-                            # Convert frequency text to numeric values
-                            frequency_text = cleaned_task.get('frequency', '').lower()
-                            if 'daily' in frequency_text or 'day' in frequency_text:
-                                cleaned_task['frequency'] = 1
-                            elif 'weekly' in frequency_text or 'week' in frequency_text:
-                                cleaned_task['frequency'] = 7
-                            elif 'monthly' in frequency_text or 'month' in frequency_text:
-                                cleaned_task['frequency'] = 30
-                            elif 'quarterly' in frequency_text or 'quarter' in frequency_text:
-                                cleaned_task['frequency'] = 90
-                            elif 'semi-annually' in frequency_text or 'semi-annual' in frequency_text or '6 month' in frequency_text:
-                                cleaned_task['frequency'] = 180
-                            elif 'annually' in frequency_text or 'yearly' in frequency_text or 'annual' in frequency_text:
-                                cleaned_task['frequency'] = 365
-                            else:
-                                cleaned_task['frequency'] = 1  # Default to daily (1) if unclear or not found
-                            
-                            # Ensure all required fields are present
-                            if 'task' not in cleaned_task or not cleaned_task['task']:
-                                logger.warning(f"Skipping task with missing or empty 'task' field: {cleaned_task}")
-                                continue
-                            
-                            cleaned_tasks.append(cleaned_task)
-                            
-                        except Exception as task_error:
-                            logger.warning(f"Error processing individual task: {task_error}")
-                            continue
+                        frequency_text = task.get('frequency', '').lower()
+                        if 'daily' in frequency_text or 'day' in frequency_text:
+                            task['frequency'] = 'daily'
+                        elif 'weekly' in frequency_text or 'week' in frequency_text:
+                            task['frequency'] = 'weekly'
+                        elif 'monthly' in frequency_text or 'month' in frequency_text:
+                            task['frequency'] = 'monthly'
+                        elif 'quarterly' in frequency_text or 'quarter' in frequency_text:
+                            task['frequency'] = 'quarterly'
+                        elif 'semi-annually' in frequency_text or 'semi-annual' in frequency_text or '6 month' in frequency_text:
+                            task['frequency'] = 'semi-annually'
+                        elif 'annually' in frequency_text or 'yearly' in frequency_text or 'annual' in frequency_text:
+                            task['frequency'] = 'annually'
+                        elif 'as-needed' in frequency_text or 'as needed' in frequency_text:
+                            task['frequency'] = 'as-needed'
+                        else:
+                            task['frequency'] = 'daily'  # Default to daily if unclear or not found
                     
-                    if cleaned_tasks:
-                        batch_tasks = [MaintenanceTask(**task) for task in cleaned_tasks]
-                        all_maintenance_tasks.extend(batch_tasks)
-                        logger.info(f"Generated {len(batch_tasks)} maintenance tasks from batch {i//batch_size + 1}")
-                    else:
-                        logger.warning(f"No valid tasks found in batch {i//batch_size + 1}, using fallback")
-                        batch_fallback = self._parse_maintenance_from_text(content)
-                        all_maintenance_tasks.extend(batch_fallback)
+                    batch_tasks = [MaintenanceTask(**task) for task in tasks_data]
+                    all_maintenance_tasks.extend(batch_tasks)
+                    
+                    logger.info(f"Generated {len(batch_tasks)} maintenance tasks from batch {i//batch_size + 1}")
                     
                 except (json.JSONDecodeError, ValueError) as e:
                     logger.warning(f"Failed to parse JSON response for batch {i//batch_size + 1}: {e}")
-                    logger.warning(f"Raw content that failed to parse: {content[:1000]}...")
                     batch_fallback = self._parse_maintenance_from_text(content)
                     all_maintenance_tasks.extend(batch_fallback)
                     
@@ -700,7 +659,7 @@ Focus on extracting practical, actionable maintenance tasks from the provided do
             logger.warning("No maintenance tasks generated, creating fallback task")
             fallback_task = MaintenanceTask(
                 task="General Equipment Inspection",
-                frequency="1",
+                frequency="daily",
                 category="inspection",
                 description="Perform general inspection of equipment based on manufacturer guidelines and operational requirements",
                 priority="medium",
@@ -988,72 +947,39 @@ Ensure all safety information is:
         return rules
     
     def _parse_maintenance_from_text(self, text: str) -> List[MaintenanceTask]:
-        """Parse maintenance tasks from plain text response with improved handling of malformed data"""
+        """Parse maintenance tasks from plain text response"""
         tasks = []
         lines = text.split('\n')
         
         frequencies = ['daily', 'weekly', 'monthly', 'quarterly', 'semi-annually', 'annually', 'as-needed']
         categories = ['lubrication', 'inspection', 'cleaning', 'calibration', 'safety', 'performance', 'electrical', 'mechanical', 'preventive', 'predictive']
         
-        logger.info(f"Parsing maintenance tasks from text with {len(lines)} lines")
-        
-        for i, line in enumerate(lines):
-            line = line.strip()
-            if not line:
-                continue
-                
+        for line in lines:
             line_lower = line.lower()
-            
-            # Skip lines that are just JSON fragments or malformed data
-            if (line.startswith('"') and line.endswith('"')) or \
-               line.startswith('"task"') or \
-               line.startswith('"category"') or \
-               line.startswith('"description"') or \
-               line.startswith('"frequency"') or \
-               line.startswith('"priority"') or \
-               line.startswith('"estimated_duration"') or \
-               line.startswith('"required_tools"') or \
-               line.startswith('"safety_notes"') or \
-               line.startswith('{') or \
-               line.startswith('}') or \
-               line.startswith('[') or \
-               line.startswith(']') or \
-               line.startswith(',') or \
-               'json' in line_lower or \
-               'format' in line_lower:
-                logger.info(f"Skipping malformed line {i}: {line}")
-                continue
-            
-            # Look for lines that contain maintenance-related content
-            if any(word in line_lower for word in ['maintenance', 'check', 'inspect', 'clean', 'lubricate', 'calibrate', 'test', 'monitor', 'verify', 'examine']):
-                logger.info(f"Processing maintenance line {i}: {line}")
-                
-                # Clean the line - remove any JSON artifacts
-                cleaned_line = self._clean_maintenance_line(line)
-                if not cleaned_line:
-                    continue
-                
+            if any(word in line_lower for word in ['maintenance', 'check', 'inspect', 'clean', 'lubricate', 'calibrate', 'test', 'monitor']):
                 # Determine frequency and convert to numeric values
-                frequency = 1  # default to daily
+                frequency = "daily"  # default to daily
                 frequency_text = "daily"
                 for freq in frequencies:
                     if freq in line_lower:
                         frequency_text = freq
                         break
                 
-                # Convert frequency text to numeric values
+                # Normalize frequency text to standard values
                 if 'daily' in frequency_text or 'day' in frequency_text:
-                    frequency = 1
+                    frequency = "daily"
                 elif 'weekly' in frequency_text or 'week' in frequency_text:
-                    frequency = 7
+                    frequency = "weekly"
                 elif 'monthly' in frequency_text or 'month' in frequency_text:
-                    frequency = 30
+                    frequency = "monthly"
                 elif 'quarterly' in frequency_text or 'quarter' in frequency_text:
-                    frequency = 90
+                    frequency = "quarterly"
                 elif 'semi-annually' in frequency_text or 'semi-annual' in frequency_text or '6 month' in frequency_text:
-                    frequency = 180
+                    frequency = "semi-annually"
                 elif 'annually' in frequency_text or 'yearly' in frequency_text or 'annual' in frequency_text:
-                    frequency = 365
+                    frequency = "annually"
+                elif 'as-needed' in frequency_text or 'as needed' in frequency_text:
+                    frequency = "as-needed"
                 
                 # Determine category
                 category = "general"  # default
@@ -1069,23 +995,17 @@ Ensure all safety information is:
                 elif any(word in line_lower for word in ['routine', 'basic', 'simple', 'low']):
                     priority = "low"
                 
-                # Create a meaningful task name from the line
-                task_name = cleaned_line[:100]  # Limit to 100 characters
-                if len(cleaned_line) > 100:
-                    task_name = cleaned_line[:97] + "..."
-                
                 tasks.append(MaintenanceTask(
-                    task=task_name,
-                    frequency=str(frequency),
+                    task=line.strip(),
+                    frequency=frequency,
                     category=category,
-                    description=cleaned_line,
+                    description=line.strip(),
                     priority=priority,
                     estimated_duration="10 minutes",
                     required_tools="Standard maintenance tools",
                     safety_notes="Follow standard safety procedures"
                 ))
         
-        logger.info(f"Generated {len(tasks)} maintenance tasks from text parsing")
         return tasks
     
     def _is_valid_json_structure(self, json_str: str) -> bool:
@@ -1127,6 +1047,219 @@ Ensure all safety information is:
         except Exception as e:
             logger.warning(f"Error validating JSON structure: {e}")
             return False
+    
+    def _extract_structured_tasks_from_text(self, text: str) -> List[MaintenanceTask]:
+        """Try to extract structured task data from text that might contain JSON-like content"""
+        try:
+            import re
+            
+            # Look for patterns that might be partial JSON or structured data
+            task_patterns = [
+                r'"task"\s*:\s*"([^"]*)"',
+                r'task\s*:\s*"([^"]*)"',
+                r'task\s*:\s*([^,\n]*)',
+            ]
+            
+            frequency_patterns = [
+                r'"frequency"\s*:\s*"([^"]*)"',
+                r'frequency\s*:\s*"([^"]*)"',
+                r'frequency\s*:\s*([^,\n]*)',
+            ]
+            
+            category_patterns = [
+                r'"category"\s*:\s*"([^"]*)"',
+                r'category\s*:\s*"([^"]*)"',
+                r'category\s*:\s*([^,\n]*)',
+            ]
+            
+            description_patterns = [
+                r'"description"\s*:\s*"([^"]*)"',
+                r'description\s*:\s*"([^"]*)"',
+                r'description\s*:\s*([^,\n]*)',
+            ]
+            
+            priority_patterns = [
+                r'"priority"\s*:\s*"([^"]*)"',
+                r'priority\s*:\s*"([^"]*)"',
+                r'priority\s*:\s*([^,\n]*)',
+            ]
+            
+            duration_patterns = [
+                r'"estimated_duration"\s*:\s*"([^"]*)"',
+                r'estimated_duration\s*:\s*"([^"]*)"',
+                r'duration\s*:\s*"([^"]*)"',
+                r'duration\s*:\s*([^,\n]*)',
+            ]
+            
+            tools_patterns = [
+                r'"required_tools"\s*:\s*"([^"]*)"',
+                r'required_tools\s*:\s*"([^"]*)"',
+                r'tools\s*:\s*"([^"]*)"',
+                r'tools\s*:\s*([^,\n]*)',
+            ]
+            
+            safety_patterns = [
+                r'"safety_notes"\s*:\s*"([^"]*)"',
+                r'safety_notes\s*:\s*"([^"]*)"',
+                r'safety\s*:\s*"([^"]*)"',
+                r'safety\s*:\s*([^,\n]*)',
+            ]
+            
+            # Extract all matches
+            tasks = []
+            lines = text.split('\n')
+            
+            for line in lines:
+                line = line.strip()
+                if not line or len(line) < 10:
+                    continue
+                
+                # Extract values using patterns
+                task = self._extract_pattern_value(line, task_patterns)
+                frequency = self._extract_pattern_value(line, frequency_patterns)
+                category = self._extract_pattern_value(line, category_patterns)
+                description = self._extract_pattern_value(line, description_patterns)
+                priority = self._extract_pattern_value(line, priority_patterns)
+                duration = self._extract_pattern_value(line, duration_patterns)
+                tools = self._extract_pattern_value(line, tools_patterns)
+                safety = self._extract_pattern_value(line, safety_patterns)
+                
+                # If we found a task, create a maintenance task object
+                if task:
+                    tasks.append(MaintenanceTask(
+                        task=task,
+                        frequency=frequency or self._extract_frequency_from_text(line.lower()),
+                        category=category or self._extract_category_from_text(line.lower()),
+                        description=description or line,
+                        priority=priority or self._extract_priority_from_text(line.lower()),
+                        estimated_duration=duration or self._extract_duration_from_text(line.lower()),
+                        required_tools=tools or self._extract_tools_from_text(line.lower()),
+                        safety_notes=safety or self._extract_safety_from_text(line.lower())
+                    ))
+            
+            return tasks
+            
+        except Exception as e:
+            logger.warning(f"Error extracting structured tasks: {e}")
+            return []
+    
+    def _extract_pattern_value(self, text: str, patterns: List[str]) -> str:
+        """Extract value using a list of patterns"""
+        try:
+            import re
+            for pattern in patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    value = match.group(1).strip()
+                    if value and value not in ['null', 'undefined', 'none']:
+                        return value
+            return ""
+        except Exception as e:
+            logger.warning(f"Error extracting pattern value: {e}")
+            return ""
+    
+    def _extract_task_values_from_line(self, line: str) -> Dict[str, str]:
+        """Extract task values from a single line"""
+        try:
+            import re
+            
+            values = {}
+            
+            # Extract task name (usually the first meaningful phrase)
+            task_match = re.search(r'^([^:]+)', line)
+            if task_match:
+                values['task'] = task_match.group(1).strip()
+            
+            # Extract other values using various patterns
+            patterns = {
+                'frequency': [r'frequency[:\s]+([^,\n]+)', r'([a-z]+)\s*frequency'],
+                'category': [r'category[:\s]+([^,\n]+)', r'([a-z]+)\s*category'],
+                'description': [r'description[:\s]+([^,\n]+)'],
+                'priority': [r'priority[:\s]+([^,\n]+)', r'([a-z]+)\s*priority'],
+                'estimated_duration': [r'duration[:\s]+([^,\n]+)', r'(\d+\s*minutes?)', r'(\d+\s*hours?)'],
+                'required_tools': [r'tools[:\s]+([^,\n]+)', r'required[:\s]+([^,\n]+)'],
+                'safety_notes': [r'safety[:\s]+([^,\n]+)', r'caution[:\s]+([^,\n]+)']
+            }
+            
+            for key, pattern_list in patterns.items():
+                for pattern in pattern_list:
+                    match = re.search(pattern, line, re.IGNORECASE)
+                    if match:
+                        values[key] = match.group(1).strip()
+                        break
+            
+            return values
+            
+        except Exception as e:
+            logger.warning(f"Error extracting task values: {e}")
+            return {}
+    
+    def _extract_frequency_from_text(self, text: str) -> str:
+        """Extract frequency from text"""
+        text_lower = text.lower()
+        if 'daily' in text_lower or 'day' in text_lower:
+            return 'daily'
+        elif 'weekly' in text_lower or 'week' in text_lower:
+            return 'weekly'
+        elif 'monthly' in text_lower or 'month' in text_lower:
+            return 'monthly'
+        elif 'quarterly' in text_lower or 'quarter' in text_lower:
+            return 'quarterly'
+        elif 'semi-annually' in text_lower or 'semi-annual' in text_lower or '6 month' in text_lower:
+            return 'semi-annually'
+        elif 'annually' in text_lower or 'yearly' in text_lower or 'annual' in text_lower:
+            return 'annually'
+        elif 'as-needed' in text_lower or 'as needed' in text_lower:
+            return 'as-needed'
+        else:
+            return 'daily'
+    
+    def _extract_category_from_text(self, text: str) -> str:
+        """Extract category from text"""
+        text_lower = text.lower()
+        categories = ['lubrication', 'inspection', 'cleaning', 'calibration', 'safety', 'performance', 'electrical', 'mechanical', 'preventive', 'predictive']
+        for category in categories:
+            if category in text_lower:
+                return category
+        return 'general'
+    
+    def _extract_priority_from_text(self, text: str) -> str:
+        """Extract priority from text"""
+        text_lower = text.lower()
+        if any(word in text_lower for word in ['critical', 'safety', 'emergency', 'urgent', 'high']):
+            return 'high'
+        elif any(word in text_lower for word in ['routine', 'basic', 'simple', 'low']):
+            return 'low'
+        else:
+            return 'medium'
+    
+    def _extract_duration_from_text(self, text: str) -> str:
+        """Extract duration from text"""
+        import re
+        duration_match = re.search(r'(\d+)\s*(minutes?|hours?|mins?)', text, re.IGNORECASE)
+        if duration_match:
+            number = duration_match.group(1)
+            unit = duration_match.group(2).lower()
+            if 'hour' in unit:
+                return f"{number} hours"
+            else:
+                return f"{number} minutes"
+        return "10 minutes"
+    
+    def _extract_tools_from_text(self, text: str) -> str:
+        """Extract tools from text"""
+        import re
+        tools_match = re.search(r'(wrench|screwdriver|gauge|meter|tool|instrument|equipment)', text, re.IGNORECASE)
+        if tools_match:
+            return tools_match.group(1)
+        return "Standard maintenance tools"
+    
+    def _extract_safety_from_text(self, text: str) -> str:
+        """Extract safety notes from text"""
+        text_lower = text.lower()
+        if any(word in text_lower for word in ['safety', 'caution', 'warning', 'danger', 'hazard']):
+            return "Follow safety procedures and wear appropriate PPE"
+        return "Follow standard safety procedures"
     
     def _clean_maintenance_line(self, line: str) -> str:
         """Clean a maintenance line by removing JSON artifacts and malformed content"""
