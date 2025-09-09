@@ -1,3 +1,9 @@
+"""
+Helper functions and utilities
+
+Version: 0.1
+"""
+
 import re
 import json
 import logging
@@ -21,10 +27,12 @@ def setup_logging(level: str = "INFO"):
 
 def sanitize_filename(filename: str) -> str:
     """Sanitize filename for use as collection name"""
-    # Remove extension and special characters
+    # Remove extension and special characters, use only the PDF name
     base_name = Path(filename).stem
     sanitized = re.sub(r'[^\w\-_]', '_', base_name.lower())
-    return f"pdf_{sanitized}"
+    
+    # Return clean PDF name without any prefixes
+    return sanitized
 
 def calculate_processing_time(start_time: float) -> str:
     """Calculate processing time in seconds"""
@@ -77,23 +85,13 @@ def validate_pdf_file(file_path: str) -> bool:
             if header != b'%PDF':
                 return False
         
-        # Try to open with PyMuPDF for additional validation
-        try:
-            import fitz  # PyMuPDF
-            doc = fitz.open(file_path)
-            page_count = len(doc)
-            doc.close()
-            
-            # Consider it valid if we can open it and it has at least one page
-            return page_count > 0
-        except Exception as e:
-            # Log the specific error for debugging
-            logger.warning(f"PyMuPDF validation failed for {file_path}: {str(e)}")
-            # Still return True if magic number check passed
-            return True
+        # Basic validation passed (magic number check)
+        logger.info(f"PDF validation successful: {file_path}")
+        return True
             
     except Exception as e:
         logger.error(f"PDF validation error for {file_path}: {str(e)}")
         return False
 
-logger = setup_logging()
+# Initialize logger at module level
+logger = logging.getLogger(__name__)

@@ -1,3 +1,10 @@
+"""
+PDF Processor Service
+Handles PDF processing using MinerU
+
+Version: 0.1
+"""
+
 import os
 import shutil
 import json
@@ -52,6 +59,7 @@ class PDFProcessor:
             "models-dir": models_dir_abs,
             "formula-enable": settings.formula_enable,
             "table-enable": settings.table_enable,
+            "image-enable": settings.image_enable,
             "method": "auto"
         }
 
@@ -86,14 +94,9 @@ class PDFProcessor:
         output_dir.mkdir(parents=True, exist_ok=True)
         
         try:
-            # Run MinerU command - try different module paths with verbose output
+            # Single, canonical MinerU command (installed via pip):
             possible_commands = [
-                ["mineru", "-p", pdf_path, "-o", str(output_dir), "-m", "auto", "-c", config_path, "--verbose"],
-                ["mineru", "-p", pdf_path, "-o", str(output_dir), "-m", "auto", "--verbose"],
-                ["mineru", "-p", pdf_path, "-o", str(output_dir), "-m", "auto", "-v"],
-                ["mineru", "-p", pdf_path, "-o", str(output_dir), "-m", "auto"],
-                ["python", "-u", "-m", "mineru", "-p", pdf_path, "-o", str(output_dir), "-m", "auto"],
-                ["python", "-u", "-m", "mineru.cli", "-p", pdf_path, "-o", str(output_dir), "-m", "auto"]
+                ["mineru", "-p", pdf_path, "-o", str(output_dir), "-m", "auto", "-c", config_path]
             ]
             
             success = False
@@ -106,8 +109,20 @@ class PDFProcessor:
                     # Prepare environment and enforce unbuffered output
                     env = os.environ.copy()
                     env["PYTHONUNBUFFERED"] = "1"
+                    env["PYTHONIOENCODING"] = "utf-8"
+                    
+                    # Force CPU usage for all operations
+                    env["CUDA_VISIBLE_DEVICES"] = ""  # Disable CUDA
+                    env["TOKENIZERS_PARALLELISM"] = "false"  # Disable tokenizer parallelism
+                    env["OMP_NUM_THREADS"] = "4"  # Limit OpenMP threads for CPU optimization
+                    env["TORCH_DEVICE"] = "cpu"  # Force PyTorch to use CPU
+                    env["TRANSFORMERS_OFFLINE"] = "0"  # Allow online model downloads
+                    
+                    # Additional CPU optimizations
+                    env["MKL_NUM_THREADS"] = "4"  # Limit MKL threads
+                    env["NUMEXPR_NUM_THREADS"] = "4"  # Limit NumExpr threads
 
-                    # Prefer line-buffered stdio on Unix if available
+                    # Prefer line-buffered stdio on Unix if available; try to preserve TTY-like behavior
                     effective_cmd = cmd
                     stdbuf_path = shutil.which("stdbuf")
                     if stdbuf_path and effective_cmd[0] != "stdbuf":
@@ -124,14 +139,33 @@ class PDFProcessor:
                         env=env
                     )
 
-                    # Stream output in real-time
+                    # Stream output in real-time without throttling
                     stdout_lines = []
-                    for line in process.stdout:
-                        if not line:
+                    buffer = ""
+                    while True:
+                        ch = process.stdout.read(1)
+                        if ch == "" and process.poll() is not None:
+                            if buffer:
+                                line = buffer.rstrip()
+                                logger.info(f"MinerU: {line}")
+                                stdout_lines.append(line)
+                            break
+                        if not ch:
                             continue
-                        cleaned = line.rstrip()
-                        stdout_lines.append(cleaned)
-                        logger.info(f"MinerU: {cleaned}")
+                        if ch == "\r":
+                            if buffer:
+                                line = buffer.rstrip()
+                                logger.info(f"MinerU: {line}")
+                                stdout_lines.append(line)
+                                buffer = ""
+                            continue
+                        if ch == "\n":
+                            line = buffer.rstrip()
+                            logger.info(f"MinerU: {line}")
+                            stdout_lines.append(line)
+                            buffer = ""
+                        else:
+                            buffer += ch
 
                     process.wait()
 
@@ -163,9 +197,8 @@ class PDFProcessor:
                     continue
             
             if not success:
-                logger.warning("MinerU failed, falling back to PyMuPDF for basic text extraction")
-                # Fallback to PyMuPDF
-                return await self.process_pdf_with_pymupdf(pdf_path, output_dir)
+                logger.error("MinerU processing failed - no fallback available")
+                raise Exception("PDF processing failed with MinerU. Please ensure MinerU is properly installed and configured.")
             
             return str(output_dir)
         finally:
@@ -173,38 +206,6 @@ class PDFProcessor:
             if Path(config_path).exists():
                 Path(config_path).unlink()
     
-    async def process_pdf_with_pymupdf(self, pdf_path: str, output_dir: Path) -> str:
-        """Process PDF using PyMuPDF for basic text extraction"""
-        logger.info(f"Processing PDF with PyMuPDF: {pdf_path}")
-        
-        try:
-            import fitz  # PyMuPDF
-            
-            # Open PDF
-            doc = fitz.open(pdf_path)
-            
-            # Extract text from all pages
-            full_text = ""
-            for page_num in range(len(doc)):
-                page = doc.load_page(page_num)
-                text = page.get_text()
-                full_text += f"\n--- Page {page_num + 1} ---\n{text}\n"
-            
-            doc.close()
-            
-            # Save as markdown
-            output_file = output_dir / "extracted_text.md"
-            with open(output_file, "w", encoding="utf-8") as f:
-                f.write(f"# PDF Text Extraction\n\n")
-                f.write(f"Source: {Path(pdf_path).name}\n\n")
-                f.write(full_text)
-            
-            logger.info(f"PyMuPDF processing completed. Text saved to: {output_file}")
-            return str(output_dir)
-            
-        except Exception as e:
-            logger.error(f"PyMuPDF processing failed: {str(e)}")
-            raise Exception(f"PyMuPDF processing failed: {str(e)}")
     
     async def process_pdf(self, pdf_path: str, output_base: str) -> List[ChunkData]:
         """

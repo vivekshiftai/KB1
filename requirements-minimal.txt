@@ -1,0 +1,36 @@
+# Minimal requirements for PDF Intelligence Platform
+# Install with: pip install -r requirements-minimal.txt
+
+# Core FastAPI
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# Configuration
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Vector database
+chromadb>=0.4.15
+sentence-transformers>=2.2.2
+
+# AI/ML
+azure-ai-inference>=1.0.0
+azure-core>=1.29.0
+tiktoken>=0.5.0
+
+# PDF processing
+
+# Image processing
+opencv-python>=4.8.0
+
+# HTTP client
+httpx>=0.25.2
+
+# Data processing
+numpy>=1.21.0
+regex>=2022.3.15
+
+# HuggingFace
+huggingface-hub>=0.17.3

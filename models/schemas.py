@@ -1,3 +1,9 @@
+"""
+Pydantic schemas for request/response models
+
+Version: 0.1
+"""
+
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -10,6 +16,13 @@ class PDFUploadResponse(BaseModel):
     processing_time: str
     collection_name: str
 
+class ImageData(BaseModel):
+    """Image data with metadata"""
+    filename: str
+    data: str  # Base64 encoded image data
+    mime_type: str
+    size: int
+
 class QueryRequest(BaseModel):
     pdf_name: str = Field(..., description="Name of the PDF file to query")
     query: str = Field(..., description="Query text")
@@ -20,7 +33,7 @@ class QueryResponse(BaseModel):
     message: str
     response: str
     chunks_used: List[str]
-    images: List[str]
+    images: List[ImageData]  # Actual image data instead of URLs
     tables: List[str]
     processing_time: str
 
@@ -36,10 +49,12 @@ class PDFListResponse(BaseModel):
     total_count: int
 
 class Rule(BaseModel):
-    condition: str
-    action: str
-    category: str
-    priority: str
+    rule_name: str
+    threshold: str
+    metric: str
+    metric_value: str
+    description: str
+    consequence: str
 
 class RulesResponse(BaseModel):
     success: bool
@@ -52,6 +67,10 @@ class MaintenanceTask(BaseModel):
     frequency: str
     category: str
     description: str
+    priority: str = "medium"  # high, medium, low
+    estimated_duration: str = "5 minutes"
+    required_tools: str = ""
+    safety_notes: str = ""
 
 class MaintenanceResponse(BaseModel):
     success: bool
@@ -60,10 +79,11 @@ class MaintenanceResponse(BaseModel):
     processing_time: str
 
 class SafetyInfo(BaseModel):
-    type: str  # warning, procedure, emergency
-    title: str
-    description: str
-    category: str
+    name: str
+    about_reaction: str
+    causes: str
+    how_to_avoid: str
+    safety_info: str
 
 class SafetyResponse(BaseModel):
     success: bool
@@ -80,5 +100,11 @@ class StandardResponse(BaseModel):
 class ChunkData(BaseModel):
     heading: str
     text: str
-    images: List[str]
-    tables: List[str]
+    image_paths: List[str] = []  # Original image paths for reference
+    embedded_images: List[ImageData] = []  # Actual embedded image data
+    tables: List[str] = []
+
+class PDFDeleteResponse(BaseModel):
+    success: bool
+    message: str
+    pdf_name: str
