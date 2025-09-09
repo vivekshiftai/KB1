@@ -219,7 +219,7 @@ class LangGraphQueryProcessor:
         
         return state
     
-    def _analyze_query(self, state: QueryState) -> QueryState:
+    async def _analyze_query(self, state: QueryState) -> QueryState:
         """Analyze the user query to determine if it's single or multiple questions"""
         logger.info("Analyzing user query for complexity")
         
@@ -314,7 +314,7 @@ Multiple: {{"is_single_question": false, "question_count": 2, "individual_questi
         
         return state
     
-    def _retrieve_chunks(self, state: QueryState) -> QueryState:
+    async def _retrieve_chunks(self, state: QueryState) -> QueryState:
         """Retrieve chunks from vector database for ALL individual queries"""
         chunk_size = state["current_chunk_size"]
         individual_queries = state["individual_queries"]
@@ -362,7 +362,7 @@ Multiple: {{"is_single_question": false, "question_count": 2, "individual_questi
         
         return state
     
-    def _generate_llm_response(self, state: QueryState) -> QueryState:
+    async def _generate_llm_response(self, state: QueryState) -> QueryState:
         """Generate LLM response from combined chunks for original user query"""
         logger.info("Generating LLM response for original user query")
         
