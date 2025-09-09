@@ -57,6 +57,54 @@ class LLMService:
         """Count tokens in text"""
         return len(self.encoding.encode(text))
     
+    def _needs_table_data(self, query: str) -> bool:
+        """Determine if the query requires table data"""
+        table_keywords = [
+            'table', 'tables', 'data', 'values', 'specifications', 'specs',
+            'parameters', 'settings', 'configuration', 'config', 'list',
+            'chart', 'graph', 'matrix', 'comparison', 'compare', 'rating',
+            'score', 'measurement', 'dimensions', 'size', 'capacity',
+            'performance', 'benchmark', 'statistics', 'stats', 'metrics'
+        ]
+        
+        query_lower = query.lower()
+        return any(keyword in query_lower for keyword in table_keywords)
+
+    def _filter_chunk_content(self, chunk: Dict[str, Any], needs_tables: bool) -> str:
+        """Filter chunk content based on whether tables are needed"""
+        try:
+            if "metadata" in chunk and "document" in chunk:
+                heading = chunk.get("metadata", {}).get("heading", "")
+                content = chunk.get("document", "")
+            else:
+                heading = chunk.get("heading", "")
+                content = chunk.get("text", chunk.get("content", ""))
+            
+            if not content:
+                return ""
+            
+            # If tables are not needed, remove table data from content
+            if not needs_tables:
+                # Remove table-like content (lines with multiple | characters or tab-separated data)
+                lines = content.split('\n')
+                filtered_lines = []
+                for line in lines:
+                    # Skip lines that look like table rows (multiple | or tab separators)
+                    if '|' in line and line.count('|') >= 2:
+                        continue
+                    if '\t' in line and line.count('\t') >= 2:
+                        continue
+                    # Skip lines that are just separators
+                    if line.strip() in ['---', '===', '|||', '+++']:
+                        continue
+                    filtered_lines.append(line)
+                content = '\n'.join(filtered_lines)
+            
+            return content
+        except Exception as e:
+            logger.warning(f"Error filtering chunk content: {str(e)}")
+            return ""
+
     async def query_with_context(self, chunks: List[Dict[str, Any]], query: str) -> Dict[str, Any]:
         """Query with context chunks using structured JSON response"""
         logger.info(f"Processing query with {len(chunks)} context chunks")
@@ -69,6 +117,10 @@ class LLMService:
                 "chunks_used": []
             }
         
+        # Determine if query needs table data
+        needs_tables = self._needs_table_data(query)
+        logger.info(f"Query analysis - Tables needed: {needs_tables}")
+        
         # Prepare context from chunks
         context_parts = []
         chunk_headings = []
@@ -76,10 +128,11 @@ class LLMService:
             try:
                 if "metadata" in chunk and "document" in chunk:
                     heading = chunk.get("metadata", {}).get("heading", "")
-                    content = chunk.get("document", "")
                 else:
                     heading = chunk.get("heading", "")
-                    content = chunk.get("text", chunk.get("content", ""))
+                
+                # Filter content based on table needs
+                content = self._filter_chunk_content(chunk, needs_tables)
                 
                 if content:
                     context_parts.append(f"**{heading}**\n{content}")
@@ -98,13 +151,17 @@ class LLMService:
         context = "\n\n".join(context_parts)
         
         # Enhanced prompt for structured JSON response
-        system_prompt = """You are a technical documentation assistant. You must respond with a valid JSON object containing the answer and referenced sections.
+        table_info = "Table data has been included in the context." if needs_tables else "Table data has been filtered out to focus on textual content."
+        
+        system_prompt = f"""You are a technical documentation assistant. You must respond with a valid JSON object containing the answer and referenced sections.
+
+Context Information: {table_info}
 
 CRITICAL: Your response must be ONLY a valid JSON object with this exact structure:
-{
+{{
     "response": "Your detailed answer to the user's question",
     "chunks_used": ["List of section headings you referenced"]
-}
+}}
 
 Do not include any text before or after the JSON object."""
         
