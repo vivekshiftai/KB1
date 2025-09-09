@@ -631,7 +631,13 @@ Please decide:
         used_chunks = []
         chunks_used = state["llm_response"].get("chunks_used", [])
         
-        for i, chunk in enumerate(state["chunks"]):
+        # Ensure current_chunks exists and is a list
+        current_chunks = state.get("current_chunks", [])
+        if not isinstance(current_chunks, list):
+            logger.warning(f"current_chunks is not a list: {type(current_chunks)}")
+            current_chunks = []
+        
+        for i, chunk in enumerate(current_chunks):
             chunk_used = False
             heading = chunk.get("metadata", {}).get("heading", "")
             
@@ -648,25 +654,31 @@ Please decide:
         
         # If no chunks matched, use all chunks
         if not used_chunks:
-            used_chunks = state["chunks"]
+            used_chunks = current_chunks
         
         # Collect embedded images and tables from chunks
         for chunk in used_chunks:
+            if not isinstance(chunk, dict):
+                logger.warning(f"Skipping non-dict chunk: {type(chunk)}")
+                continue
+                
             # Collect embedded images (base64 data already in chunks)
             embedded_images = chunk.get("embedded_images", [])
-            for img in embedded_images:
-                if hasattr(img, 'filename'):
-                    filename = img.filename
-                else:
-                    filename = str(img)
-                
-                if filename not in seen_image_filenames:
-                    images.append(img)
-                    seen_image_filenames.add(filename)
+            if isinstance(embedded_images, list):
+                for img in embedded_images:
+                    if hasattr(img, 'filename'):
+                        filename = img.filename
+                    else:
+                        filename = str(img)
+                    
+                    if filename not in seen_image_filenames:
+                        images.append(img)
+                        seen_image_filenames.add(filename)
             
             # Collect tables
             chunk_tables = chunk.get("tables", [])
-            tables.extend(chunk_tables)
+            if isinstance(chunk_tables, list):
+                tables.extend(chunk_tables)
         
         # Remove duplicate tables
         tables = list(set(tables))
