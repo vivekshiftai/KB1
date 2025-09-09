@@ -105,7 +105,7 @@ class LLMService:
             logger.warning(f"Error filtering chunk content: {str(e)}")
             return ""
 
-    async def query_with_context(self, chunks: List[Dict[str, Any]], query: str) -> Dict[str, Any]:
+    async def query_with_context(self, chunks: List[Dict[str, Any]], query: str, query_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Query with context chunks using structured JSON response"""
         logger.info(f"Processing query with {len(chunks)} context chunks")
         
@@ -153,9 +153,25 @@ class LLMService:
         # Enhanced prompt for structured JSON response
         table_info = "Table data has been included in the context." if needs_tables else "Table data has been filtered out to focus on textual content."
         
+        # Add query analysis information if available
+        analysis_info = ""
+        if query_analysis:
+            complexity = query_analysis.get("complexity", "unknown")
+            question_count = query_analysis.get("question_count", 1)
+            is_single = query_analysis.get("is_single_question", True)
+            reasoning = query_analysis.get("reasoning", "")
+            
+            analysis_info = f"""
+Query Analysis:
+- Complexity: {complexity}
+- Question Count: {question_count}
+- Single Question: {is_single}
+- Reasoning: {reasoning}
+"""
+        
         system_prompt = f"""You are a technical documentation assistant. You must respond with a valid JSON object containing the answer and referenced sections.
 
-Context Information: {table_info}
+Context Information: {table_info}{analysis_info}
 
 CRITICAL: Your response must be ONLY a valid JSON object with this exact structure:
 {{
@@ -165,6 +181,15 @@ CRITICAL: Your response must be ONLY a valid JSON object with this exact structu
 
 Do not include any text before or after the JSON object."""
         
+        # Add query analysis guidance if available
+        analysis_guidance = ""
+        if query_analysis and not query_analysis.get("is_single_question", True):
+            individual_questions = query_analysis.get("individual_questions", [])
+            analysis_guidance = f"""
+
+IMPORTANT: This query has been analyzed as containing multiple questions: {individual_questions}
+Please ensure your response addresses all aspects of the original query comprehensively."""
+        
         user_prompt = f"""Based on the following documentation, answer the user's question and return a JSON response.
 
 Documentation Context:
@@ -172,7 +197,7 @@ Documentation Context:
 
 Available Section Headings: {chunk_headings}
 
-User Question: {query}
+User Question: {query}{analysis_guidance}
 
 Provide a comprehensive answer based on the documentation. In the "chunks_used" array, list the exact section headings from the available headings that you referenced in your answer.
 

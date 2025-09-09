@@ -387,7 +387,8 @@ Please provide a comprehensive answer that addresses all aspects of the original
             
             llm_result = await self.llm_service.query_with_context(
                 state["current_chunks"], 
-                enhanced_query
+                enhanced_query,
+                state.get("query_analysis")
             )
             
             state["llm_response"] = llm_result
