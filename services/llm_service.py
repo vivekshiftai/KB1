@@ -58,20 +58,12 @@ class LLMService:
         return len(self.encoding.encode(text))
     
     def _needs_table_data(self, query: str) -> bool:
-        """Determine if the query requires table data"""
-        table_keywords = [
-            'table', 'tables', 'data', 'values', 'specifications', 'specs',
-            'parameters', 'settings', 'configuration', 'config', 'list',
-            'chart', 'graph', 'matrix', 'comparison', 'compare', 'rating',
-            'score', 'measurement', 'dimensions', 'size', 'capacity',
-            'performance', 'benchmark', 'statistics', 'stats', 'metrics'
-        ]
-        
-        query_lower = query.lower()
-        return any(keyword in query_lower for keyword in table_keywords)
+        """Determine if the query requires table data - Always return True to include all data"""
+        # Always include tables and full data for comprehensive responses
+        return True
 
     def _filter_chunk_content(self, chunk: Dict[str, Any], needs_tables: bool) -> str:
-        """Filter chunk content based on whether tables are needed"""
+        """Extract full chunk content including all data and tables"""
         try:
             if "metadata" in chunk and "document" in chunk:
                 heading = chunk.get("metadata", {}).get("heading", "")
@@ -83,26 +75,11 @@ class LLMService:
             if not content:
                 return ""
             
-            # If tables are not needed, remove table data from content
-            if not needs_tables:
-                # Remove table-like content (lines with multiple | characters or tab-separated data)
-                lines = content.split('\n')
-                filtered_lines = []
-                for line in lines:
-                    # Skip lines that look like table rows (multiple | or tab separators)
-                    if '|' in line and line.count('|') >= 2:
-                        continue
-                    if '\t' in line and line.count('\t') >= 2:
-                        continue
-                    # Skip lines that are just separators
-                    if line.strip() in ['---', '===', '|||', '+++']:
-                        continue
-                    filtered_lines.append(line)
-                content = '\n'.join(filtered_lines)
-            
+            # Always return full content including tables, specifications, and all data
+            # No filtering - use complete chunk data for comprehensive responses
             return content
         except Exception as e:
-            logger.warning(f"Error filtering chunk content: {str(e)}")
+            logger.warning(f"Error extracting chunk content: {str(e)}")
             return ""
 
     async def query_with_context(self, chunks: List[Dict[str, Any]], query: str, query_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -151,7 +128,7 @@ class LLMService:
         context = "\n\n".join(context_parts)
         
         # Enhanced prompt for structured JSON response
-        table_info = "Table data has been included in the context." if needs_tables else "Table data has been filtered out to focus on textual content."
+        table_info = "Full documentation data including tables, specifications, and all technical details has been included in the context for comprehensive analysis."
         
         # Add query analysis information if available
         analysis_info = ""
@@ -412,7 +389,7 @@ Do not include any text before or after the JSON object."""
         if not chunks:
             return "No content available to generate rules from."
         
-        # Prepare context from chunks
+        # Prepare context from chunks (include full data with tables)
         context_parts = []
         for chunk in chunks:
             try:
@@ -424,6 +401,7 @@ Do not include any text before or after the JSON object."""
                     content = chunk.get("text", chunk.get("content", ""))
                 
                 if content:
+                    # Include full content including tables, specifications, and all data
                     context_parts.append(f"**{heading}**\n{content}")
             except Exception as e:
                 logger.warning(f"Error processing chunk for rules: {str(e)}")
@@ -435,6 +413,8 @@ Do not include any text before or after the JSON object."""
         context = "\n\n".join(context_parts)
         
         system_prompt = """You are an expert in IoT monitoring and industrial automation. Your task is to analyze technical documentation and generate comprehensive IoT monitoring rules.
+
+IMPORTANT: The provided documentation includes complete technical data, tables, specifications, and detailed information. Use all available data to create precise monitoring rules.
 
 CRITICAL: You must respond with ONLY a valid JSON object with this exact structure:
 {
@@ -488,11 +468,20 @@ Return ONLY the JSON object with the rules array."""
             
             # Parse JSON response
             import json
+            import re
             try:
-                parsed_response = json.loads(raw_response)
+                # Remove markdown code blocks if present
+                cleaned_response = raw_response
+                if "```json" in cleaned_response:
+                    cleaned_response = re.sub(r'```json\s*', '', cleaned_response)
+                if "```" in cleaned_response:
+                    cleaned_response = re.sub(r'```\s*$', '', cleaned_response)
+                
+                parsed_response = json.loads(cleaned_response.strip())
                 return parsed_response.get("rules", [])
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse rules JSON: {str(e)}")
+                logger.error(f"Raw response: {raw_response}")
                 return []
             
         except Exception as e:
@@ -506,7 +495,7 @@ Return ONLY the JSON object with the rules array."""
         if not chunks:
             return "No content available to generate safety information from."
         
-        # Prepare context from chunks
+        # Prepare context from chunks (include full data with tables)
         context_parts = []
         for chunk in chunks:
             try:
@@ -518,6 +507,7 @@ Return ONLY the JSON object with the rules array."""
                     content = chunk.get("text", chunk.get("content", ""))
                 
                 if content:
+                    # Include full content including tables, specifications, and all data
                     context_parts.append(f"**{heading}**\n{content}")
             except Exception as e:
                 logger.warning(f"Error processing chunk for safety: {str(e)}")
@@ -529,6 +519,8 @@ Return ONLY the JSON object with the rules array."""
         context = "\n\n".join(context_parts)
         
         system_prompt = """You are a safety expert specializing in industrial equipment and machinery safety. Your task is to analyze technical documentation and generate comprehensive safety information.
+
+IMPORTANT: The provided documentation includes complete technical data, tables, specifications, and detailed information. Use all available data to create comprehensive safety guidelines.
 
 CRITICAL: You must respond with ONLY a valid JSON object with this exact structure:
 {
@@ -600,14 +592,23 @@ Return ONLY the JSON object with safety_precautions and safety_information array
             
             # Parse JSON response
             import json
+            import re
             try:
-                parsed_response = json.loads(raw_response)
+                # Remove markdown code blocks if present
+                cleaned_response = raw_response
+                if "```json" in cleaned_response:
+                    cleaned_response = re.sub(r'```json\s*', '', cleaned_response)
+                if "```" in cleaned_response:
+                    cleaned_response = re.sub(r'```\s*$', '', cleaned_response)
+                
+                parsed_response = json.loads(cleaned_response.strip())
                 return {
                     "safety_precautions": parsed_response.get("safety_precautions", []),
                     "safety_information": parsed_response.get("safety_information", [])
                 }
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse safety JSON: {str(e)}")
+                logger.error(f"Raw response: {raw_response}")
                 return {"safety_precautions": [], "safety_information": []}
             
         except Exception as e:
@@ -621,7 +622,7 @@ Return ONLY the JSON object with safety_precautions and safety_information array
         if not chunks:
             return "No content available to generate maintenance schedule from."
         
-        # Prepare context from chunks
+        # Prepare context from chunks (always include tables for maintenance)
         context_parts = []
         for chunk in chunks:
             try:
@@ -633,6 +634,7 @@ Return ONLY the JSON object with safety_precautions and safety_information array
                     content = chunk.get("text", chunk.get("content", ""))
                 
                 if content:
+                    # For maintenance, always include all content including tables
                     context_parts.append(f"**{heading}**\n{content}")
             except Exception as e:
                 logger.warning(f"Error processing chunk for maintenance: {str(e)}")
@@ -644,6 +646,8 @@ Return ONLY the JSON object with safety_precautions and safety_information array
         context = "\n\n".join(context_parts)
         
         system_prompt = """You are a maintenance expert specializing in industrial equipment and machinery maintenance. Your task is to analyze technical documentation and generate comprehensive maintenance schedules.
+
+IMPORTANT: The provided documentation includes tables, specifications, and detailed technical data. Use this information to create precise maintenance schedules.
 
 CRITICAL: You must respond with ONLY a valid JSON object with this exact structure:
 {
@@ -698,11 +702,20 @@ Return ONLY the JSON object with the maintenance_tasks array."""
             
             # Parse JSON response
             import json
+            import re
             try:
-                parsed_response = json.loads(raw_response)
+                # Remove markdown code blocks if present
+                cleaned_response = raw_response
+                if "```json" in cleaned_response:
+                    cleaned_response = re.sub(r'```json\s*', '', cleaned_response)
+                if "```" in cleaned_response:
+                    cleaned_response = re.sub(r'```\s*$', '', cleaned_response)
+                
+                parsed_response = json.loads(cleaned_response.strip())
                 return parsed_response.get("maintenance_tasks", [])
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse maintenance JSON: {str(e)}")
+                logger.error(f"Raw response: {raw_response}")
                 return []
             
         except Exception as e:

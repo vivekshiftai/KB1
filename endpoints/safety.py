@@ -56,12 +56,12 @@ async def generate_safety_information(pdf_name: str = Path(..., description="Nam
         
         # Query for safety-relevant chunks using keywords
         safety_chunks = []
-        for keyword in safety_keywords[:12]:  # Use top 12 keywords to get diverse content
+        for keyword in safety_keywords[:3]:  # Use top 3 keywords for 15 total chunks
             try:
                 keyword_chunks = await vector_db.query_chunks(
                     collection_name=collection_name,
                     query=keyword,
-                    top_k=4
+                    top_k=5  # Fetch 5 chunks per keyword (15 total)
                 )
                 safety_chunks.extend(keyword_chunks)
                 logger.info(f"Found {len(keyword_chunks)} chunks for keyword: {keyword}")

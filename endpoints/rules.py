@@ -53,12 +53,12 @@ async def generate_rules(pdf_name: str = Path(..., description="Name of the PDF 
         
         # Query for IoT/monitoring-relevant chunks using keywords
         iot_chunks = []
-        for keyword in iot_keywords[:8]:  # Use top 8 keywords to get diverse content
+        for keyword in iot_keywords[:4]:  # Use top 4 keywords for 20 total chunks
             try:
                 keyword_chunks = await vector_db.query_chunks(
                     collection_name=collection_name,
                     query=keyword,
-                    top_k=3
+                    top_k=5  # Fetch 5 chunks per keyword (20 total)
                 )
                 iot_chunks.extend(keyword_chunks)
                 logger.info(f"Found {len(keyword_chunks)} chunks for keyword: {keyword}")
@@ -66,7 +66,7 @@ async def generate_rules(pdf_name: str = Path(..., description="Name of the PDF 
                 logger.warning(f"Error querying for keyword '{keyword}': {str(e)}")
                 continue
         
-        # Remove duplicates and get top 10 most relevant chunks
+        # Remove duplicates and get top 20 most relevant chunks
         unique_chunks = []
         seen_chunks = set()
         for chunk in iot_chunks:
@@ -75,9 +75,9 @@ async def generate_rules(pdf_name: str = Path(..., description="Name of the PDF 
                 unique_chunks.append(chunk)
                 seen_chunks.add(chunk_id)
         
-        # Sort by relevance (lower distance = higher relevance) and take top 10
+        # Sort by relevance (lower distance = higher relevance) and take top 20
         unique_chunks.sort(key=lambda x: x.get("distance", 1.0))
-        top_iot_chunks = unique_chunks[:10]
+        top_iot_chunks = unique_chunks[:20]
         
         logger.info(f"Found {len(top_iot_chunks)} unique IoT/monitoring-relevant chunks out of {len(iot_chunks)} total chunks")
         

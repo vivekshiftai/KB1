@@ -54,18 +54,30 @@ async def generate_maintenance_schedule(pdf_name: str = Path(..., description="N
         
         # Query for maintenance-relevant chunks using keywords
         maintenance_chunks = []
-        for keyword in maintenance_keywords[:10]:  # Use top 10 keywords for comprehensive coverage
+        for keyword in maintenance_keywords[:3]:  # Use top 3 keywords for 10 total chunks
             try:
                 keyword_chunks = await vector_db.query_chunks(
                     collection_name=collection_name,
                     query=keyword,
-                    top_k=9  # Fetch top 9 chunks per keyword
+                    top_k=3  # Fetch 3 chunks per keyword (9 total)
                 )
                 maintenance_chunks.extend(keyword_chunks)
                 logger.info(f"Found {len(keyword_chunks)} chunks for keyword: {keyword}")
             except Exception as e:
                 logger.warning(f"Error querying for keyword '{keyword}': {str(e)}")
                 continue
+        
+        # Add one more chunk to reach 10 total
+        if len(maintenance_chunks) < 10:
+            try:
+                additional_chunks = await vector_db.query_chunks(
+                    collection_name=collection_name,
+                    query="maintenance",
+                    top_k=1
+                )
+                maintenance_chunks.extend(additional_chunks)
+            except Exception as e:
+                logger.warning(f"Error getting additional maintenance chunk: {str(e)}")
         
         # Remove duplicates and get top chunks
         unique_chunks = []
