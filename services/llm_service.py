@@ -156,6 +156,13 @@ CRITICAL: Your response must be ONLY a valid JSON object with this exact structu
     "chunks_used": ["List of section headings you referenced"]
 }}
 
+RESPONSE FORMAT REQUIREMENTS:
+- Structure your response in clear, numbered steps (1., 2., 3., etc.)
+- Use bullet points or numbered lists for procedures and instructions
+- Break down complex processes into sequential steps
+- Make each step clear and actionable
+- Use proper formatting with line breaks between steps
+
 Do not include any text before or after the JSON object."""
         
         # Add query analysis guidance if available
@@ -175,6 +182,13 @@ Documentation Context:
 Available Section Headings: {chunk_headings}
 
 User Question: {query}{analysis_guidance}
+
+IMPORTANT FORMATTING INSTRUCTIONS:
+- Structure your response as clear, numbered steps (1., 2., 3., etc.)
+- Break down procedures into sequential, actionable steps
+- Use bullet points for lists and sub-items
+- Make each step specific and easy to follow
+- Include proper line breaks between steps for readability
 
 Provide a comprehensive answer based on the documentation. In the "chunks_used" array, list the exact section headings from the available headings that you referenced in your answer.
 
@@ -422,7 +436,7 @@ CRITICAL: You must respond with ONLY a valid JSON object with this exact structu
     {
       "name": "Rule Name",
       "description": "Detailed description of the rule",
-      "metric": "metric_name",
+      "metric": "sensor_metric_name",
       "metric_value": "numerical_value_with_unit",
       "threshold": "numerical_threshold_condition",
       "consequence": "What happens when threshold is exceeded",
@@ -433,10 +447,19 @@ CRITICAL: You must respond with ONLY a valid JSON object with this exact structu
   ]
 }
 
-IMPORTANT: 
-- metric_value should be a specific numerical value with unit (e.g., "75°C", "1500 N", "85%", "220 V")
-- threshold should be numerical conditions (e.g., "> 75°C", "< 20%", "> 1500 N", "= 220 V")
-- Use actual numerical values from the documentation, not generic descriptions
+CRITICAL IoT MONITORING REQUIREMENTS:
+- metric must be a SENSOR-MEASURABLE parameter (temperature, pressure, voltage, current, speed, vibration, etc.)
+- metric_value must be a specific numerical value with unit (e.g., "75°C", "1500 N", "85%", "220 V", "50 Hz")
+- threshold must be numerical conditions (e.g., "> 75°C", "< 20%", "> 1500 N", "= 220 V")
+- DO NOT use descriptive states like "hinged down", "pushed in", "equal distance" - these are not IoT metrics
+- Focus on measurable physical parameters that sensors can detect
+- Use actual numerical values from the documentation specifications
+
+VALID IoT METRICS EXAMPLES:
+- temperature, pressure, voltage, current, speed, vibration, frequency, power, flow_rate, level, humidity, etc.
+
+INVALID METRICS (DO NOT USE):
+- bolt_status, alignment_status, installation_status, position_status, etc.
 
 Do not include any text before or after the JSON object."""
         
@@ -446,17 +469,22 @@ Documentation:
 {context}
 
 Generate a comprehensive set of IoT monitoring rules that cover:
-1. Equipment monitoring parameters
-2. Safety thresholds and alerts  
-3. Performance metrics
-4. Maintenance indicators
-5. Operational conditions
+1. Equipment monitoring parameters (temperature, pressure, voltage, current, speed, vibration)
+2. Safety thresholds and alerts (temperature limits, pressure limits, electrical limits)
+3. Performance metrics (power consumption, efficiency, output levels)
+4. Maintenance indicators (vibration levels, wear indicators, performance degradation)
+5. Operational conditions (operating ranges, normal vs abnormal conditions)
 
-CRITICAL REQUIREMENTS:
+CRITICAL IoT MONITORING REQUIREMENTS:
+- ONLY create rules for SENSOR-MEASURABLE parameters that IoT devices can monitor
 - Extract actual numerical values from tables, specifications, and technical data
-- Use specific numbers with units (e.g., "75°C", "1500 N", "85%", "220 V")
+- Use specific numbers with units (e.g., "75°C", "1500 N", "85%", "220 V", "50 Hz")
 - Create precise threshold conditions with real numbers from the documentation
-- Do not use generic descriptions - use the exact values found in the technical data
+- Focus on physical parameters that can be measured by sensors
+- DO NOT create rules for mechanical states, positions, or installation status
+
+VALID SENSOR METRICS TO USE:
+- Temperature, pressure, voltage, current, speed, vibration, frequency, power, flow rate, level, humidity, torque, force, etc.
 
 Return ONLY the JSON object with the rules array."""
         
