@@ -423,8 +423,8 @@ CRITICAL: You must respond with ONLY a valid JSON object with this exact structu
       "name": "Rule Name",
       "description": "Detailed description of the rule",
       "metric": "metric_name",
-      "metric_value": "unit_of_measurement",
-      "threshold": "threshold_condition",
+      "metric_value": "numerical_value_with_unit",
+      "threshold": "numerical_threshold_condition",
       "consequence": "What happens when threshold is exceeded",
       "condition": "IF condition statement",
       "action": "Actions to take (SEND_ALERT, LOG_EVENT, etc.)",
@@ -432,6 +432,11 @@ CRITICAL: You must respond with ONLY a valid JSON object with this exact structu
     }
   ]
 }
+
+IMPORTANT: 
+- metric_value should be a specific numerical value with unit (e.g., "75°C", "1500 N", "85%", "220 V")
+- threshold should be numerical conditions (e.g., "> 75°C", "< 20%", "> 1500 N", "= 220 V")
+- Use actual numerical values from the documentation, not generic descriptions
 
 Do not include any text before or after the JSON object."""
         
@@ -446,6 +451,12 @@ Generate a comprehensive set of IoT monitoring rules that cover:
 3. Performance metrics
 4. Maintenance indicators
 5. Operational conditions
+
+CRITICAL REQUIREMENTS:
+- Extract actual numerical values from tables, specifications, and technical data
+- Use specific numbers with units (e.g., "75°C", "1500 N", "85%", "220 V")
+- Create precise threshold conditions with real numbers from the documentation
+- Do not use generic descriptions - use the exact values found in the technical data
 
 Return ONLY the JSON object with the rules array."""
         
@@ -571,6 +582,13 @@ Generate detailed safety information covering:
 5. Safety warnings and precautions
 6. Risk assessments
 
+IMPORTANT: Use specific numerical values from the documentation for:
+- Temperature limits (e.g., "60°C", "100°F")
+- Pressure limits (e.g., "150 psi", "10 bar")
+- Voltage/current limits (e.g., "220 V", "5 A")
+- Distance requirements (e.g., "2 meters", "6 feet")
+- Time limits and durations from safety procedures
+
 Return ONLY the JSON object with safety_precautions and safety_information arrays."""
         
         try:
@@ -680,6 +698,11 @@ Generate a detailed maintenance schedule covering:
 4. Step-by-step maintenance procedures
 5. Inspection checklists
 6. Maintenance priorities
+
+IMPORTANT: Use specific numerical values from the documentation for:
+- Frequencies (e.g., "every 30 days", "monthly", "every 1000 hours")
+- Durations (e.g., "2 hours", "30 minutes", "4 hours")
+- Quantities and measurements from tables and specifications
 
 Return ONLY the JSON object with the maintenance_tasks array."""
         
