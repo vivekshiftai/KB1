@@ -404,3 +404,307 @@ Do not include any text before or after the JSON object."""
             
             logger.info(f"Using fallback sections: {fallback_sections}")
             return fallback_sections
+
+    async def generate_rules(self, chunks: List[Dict[str, Any]]) -> str:
+        """Generate IoT monitoring rules from chunks"""
+        logger.info(f"Generating rules from {len(chunks)} chunks")
+        
+        if not chunks:
+            return "No content available to generate rules from."
+        
+        # Prepare context from chunks
+        context_parts = []
+        for chunk in chunks:
+            try:
+                if "metadata" in chunk and "document" in chunk:
+                    heading = chunk.get("metadata", {}).get("heading", "")
+                    content = chunk.get("document", "")
+                else:
+                    heading = chunk.get("heading", "")
+                    content = chunk.get("text", chunk.get("content", ""))
+                
+                if content:
+                    context_parts.append(f"**{heading}**\n{content}")
+            except Exception as e:
+                logger.warning(f"Error processing chunk for rules: {str(e)}")
+                continue
+        
+        if not context_parts:
+            return "No valid content could be extracted to generate rules."
+        
+        context = "\n\n".join(context_parts)
+        
+        system_prompt = """You are an expert in IoT monitoring and industrial automation. Your task is to analyze technical documentation and generate comprehensive IoT monitoring rules.
+
+CRITICAL: You must respond with ONLY a valid JSON object with this exact structure:
+{
+  "rules": [
+    {
+      "name": "Rule Name",
+      "description": "Detailed description of the rule",
+      "metric": "metric_name",
+      "metric_value": "unit_of_measurement",
+      "threshold": "threshold_condition",
+      "consequence": "What happens when threshold is exceeded",
+      "condition": "IF condition statement",
+      "action": "Actions to take (SEND_ALERT, LOG_EVENT, etc.)",
+      "priority": "HIGH/MEDIUM/LOW"
+    }
+  ]
+}
+
+Do not include any text before or after the JSON object."""
+        
+        user_prompt = f"""Based on the following technical documentation, generate comprehensive IoT monitoring rules:
+
+Documentation:
+{context}
+
+Generate a comprehensive set of IoT monitoring rules that cover:
+1. Equipment monitoring parameters
+2. Safety thresholds and alerts  
+3. Performance metrics
+4. Maintenance indicators
+5. Operational conditions
+
+Return ONLY the JSON object with the rules array."""
+        
+        try:
+            response = self.client.complete(
+                messages=[
+                    SystemMessage(content=system_prompt),
+                    UserMessage(content=user_prompt)
+                ],
+                max_tokens=self.max_completion_tokens,
+                temperature=0.2,
+                top_p=0.1,
+                presence_penalty=0.0,
+                frequency_penalty=0.0,
+                model=self.model_name
+            )
+            
+            raw_response = response.choices[0].message.content.strip()
+            logger.info(f"Raw LLM response for rules: {raw_response[:200]}...")
+            
+            # Parse JSON response
+            import json
+            try:
+                parsed_response = json.loads(raw_response)
+                return parsed_response.get("rules", [])
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse rules JSON: {str(e)}")
+                return []
+            
+        except Exception as e:
+            logger.error(f"Error generating rules: {str(e)}")
+            return []
+
+    async def generate_safety_information(self, chunks: List[Dict[str, Any]]) -> str:
+        """Generate safety information from chunks"""
+        logger.info(f"Generating safety information from {len(chunks)} chunks")
+        
+        if not chunks:
+            return "No content available to generate safety information from."
+        
+        # Prepare context from chunks
+        context_parts = []
+        for chunk in chunks:
+            try:
+                if "metadata" in chunk and "document" in chunk:
+                    heading = chunk.get("metadata", {}).get("heading", "")
+                    content = chunk.get("document", "")
+                else:
+                    heading = chunk.get("heading", "")
+                    content = chunk.get("text", chunk.get("content", ""))
+                
+                if content:
+                    context_parts.append(f"**{heading}**\n{content}")
+            except Exception as e:
+                logger.warning(f"Error processing chunk for safety: {str(e)}")
+                continue
+        
+        if not context_parts:
+            return "No valid content could be extracted to generate safety information."
+        
+        context = "\n\n".join(context_parts)
+        
+        system_prompt = """You are a safety expert specializing in industrial equipment and machinery safety. Your task is to analyze technical documentation and generate comprehensive safety information.
+
+CRITICAL: You must respond with ONLY a valid JSON object with this exact structure:
+{
+  "safety_precautions": [
+    {
+      "title": "Safety Title",
+      "description": "Description of the safety concern",
+      "category": "category_type",
+      "severity": "HIGH/MEDIUM/LOW",
+      "mitigation": "How to mitigate the risk",
+      "about_reaction": "What happens if not addressed",
+      "causes": "What causes this safety issue",
+      "how_to_avoid": "How to avoid the issue",
+      "safety_info": "Additional safety information",
+      "type": "warning/caution/procedure",
+      "recommended_action": "Recommended action to take"
+    }
+  ],
+  "safety_information": [
+    {
+      "title": "Information Title",
+      "description": "Description of safety information",
+      "category": "category_type",
+      "severity": "HIGH/MEDIUM/LOW",
+      "mitigation": "How to mitigate the risk",
+      "about_reaction": "What happens if not addressed",
+      "causes": "What causes this safety issue",
+      "how_to_avoid": "How to avoid the issue",
+      "safety_info": "Additional safety information",
+      "type": "warning/caution/procedure",
+      "recommended_action": "Recommended action to take"
+    }
+  ]
+}
+
+Do not include any text before or after the JSON object."""
+        
+        user_prompt = f"""Based on the following technical documentation, generate comprehensive safety information:
+
+Documentation:
+{context}
+
+Generate detailed safety information covering:
+1. Safety procedures and protocols
+2. Hazard identification and mitigation
+3. Personal protective equipment (PPE) requirements
+4. Emergency procedures
+5. Safety warnings and precautions
+6. Risk assessments
+
+Return ONLY the JSON object with safety_precautions and safety_information arrays."""
+        
+        try:
+            response = self.client.complete(
+                messages=[
+                    SystemMessage(content=system_prompt),
+                    UserMessage(content=user_prompt)
+                ],
+                max_tokens=self.max_completion_tokens,
+                temperature=0.2,
+                top_p=0.1,
+                presence_penalty=0.0,
+                frequency_penalty=0.0,
+                model=self.model_name
+            )
+            
+            raw_response = response.choices[0].message.content.strip()
+            logger.info(f"Raw LLM response for safety: {raw_response[:200]}...")
+            
+            # Parse JSON response
+            import json
+            try:
+                parsed_response = json.loads(raw_response)
+                return {
+                    "safety_precautions": parsed_response.get("safety_precautions", []),
+                    "safety_information": parsed_response.get("safety_information", [])
+                }
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse safety JSON: {str(e)}")
+                return {"safety_precautions": [], "safety_information": []}
+            
+        except Exception as e:
+            logger.error(f"Error generating safety information: {str(e)}")
+            return {"safety_precautions": [], "safety_information": []}
+
+    async def generate_maintenance_schedule(self, chunks: List[Dict[str, Any]]) -> str:
+        """Generate maintenance schedule from chunks"""
+        logger.info(f"Generating maintenance schedule from {len(chunks)} chunks")
+        
+        if not chunks:
+            return "No content available to generate maintenance schedule from."
+        
+        # Prepare context from chunks
+        context_parts = []
+        for chunk in chunks:
+            try:
+                if "metadata" in chunk and "document" in chunk:
+                    heading = chunk.get("metadata", {}).get("heading", "")
+                    content = chunk.get("document", "")
+                else:
+                    heading = chunk.get("heading", "")
+                    content = chunk.get("text", chunk.get("content", ""))
+                
+                if content:
+                    context_parts.append(f"**{heading}**\n{content}")
+            except Exception as e:
+                logger.warning(f"Error processing chunk for maintenance: {str(e)}")
+                continue
+        
+        if not context_parts:
+            return "No valid content could be extracted to generate maintenance schedule."
+        
+        context = "\n\n".join(context_parts)
+        
+        system_prompt = """You are a maintenance expert specializing in industrial equipment and machinery maintenance. Your task is to analyze technical documentation and generate comprehensive maintenance schedules.
+
+CRITICAL: You must respond with ONLY a valid JSON object with this exact structure:
+{
+  "maintenance_tasks": [
+    {
+      "task": "Task description",
+      "task_name": "Specific task name",
+      "description": "Detailed description of the task",
+      "frequency": "frequency_interval",
+      "priority": "HIGH/MEDIUM/LOW",
+      "estimated_duration": "duration_in_time",
+      "required_tools": "List of required tools",
+      "category": "PREVENTIVE/CORRECTIVE/PREDICTIVE",
+      "safety_notes": "Safety considerations and notes"
+    }
+  ]
+}
+
+Do not include any text before or after the JSON object."""
+        
+        user_prompt = f"""Based on the following technical documentation, generate a comprehensive maintenance schedule:
+
+Documentation:
+{context}
+
+Generate a detailed maintenance schedule covering:
+1. Preventive maintenance tasks
+2. Maintenance intervals and frequencies
+3. Required tools and materials
+4. Step-by-step maintenance procedures
+5. Inspection checklists
+6. Maintenance priorities
+
+Return ONLY the JSON object with the maintenance_tasks array."""
+        
+        try:
+            response = self.client.complete(
+                messages=[
+                    SystemMessage(content=system_prompt),
+                    UserMessage(content=user_prompt)
+                ],
+                max_tokens=self.max_completion_tokens,
+                temperature=0.2,
+                top_p=0.1,
+                presence_penalty=0.0,
+                frequency_penalty=0.0,
+                model=self.model_name
+            )
+            
+            raw_response = response.choices[0].message.content.strip()
+            logger.info(f"Raw LLM response for maintenance: {raw_response[:200]}...")
+            
+            # Parse JSON response
+            import json
+            try:
+                parsed_response = json.loads(raw_response)
+                return parsed_response.get("maintenance_tasks", [])
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse maintenance JSON: {str(e)}")
+                return []
+            
+        except Exception as e:
+            logger.error(f"Error generating maintenance schedule: {str(e)}")
+            return []

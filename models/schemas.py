@@ -49,47 +49,58 @@ class PDFListResponse(BaseModel):
     total_count: int
 
 class Rule(BaseModel):
-    rule_name: str
-    threshold: str
+    name: str
+    description: str
     metric: str
     metric_value: str
-    description: str
+    threshold: str
     consequence: str
+    condition: str
+    action: str
+    priority: str
 
 class RulesResponse(BaseModel):
     success: bool
-    pdf_name: str
-    rules: List[Rule]
+    message: str
     processing_time: str
+    rules: List[Rule]
 
 class MaintenanceTask(BaseModel):
     task: str
-    frequency: str
-    category: str
+    task_name: str
     description: str
-    priority: str = "medium"  # high, medium, low
-    estimated_duration: str = "5 minutes"
-    required_tools: str = ""
-    safety_notes: str = ""
+    frequency: str
+    priority: str
+    estimated_duration: str
+    required_tools: str
+    category: str
+    safety_notes: str
 
 class MaintenanceResponse(BaseModel):
     success: bool
-    pdf_name: str
-    maintenance_tasks: List[MaintenanceTask]
+    message: str
     processing_time: str
+    maintenance_tasks: List[MaintenanceTask]
 
 class SafetyInfo(BaseModel):
-    name: str
+    title: str
+    description: str
+    category: str
+    severity: str
+    mitigation: str
     about_reaction: str
     causes: str
     how_to_avoid: str
     safety_info: str
+    type: str
+    recommended_action: str
 
 class SafetyResponse(BaseModel):
     success: bool
-    pdf_name: str
-    safety_information: List[SafetyInfo]
+    message: str
     processing_time: str
+    safety_precautions: List[SafetyInfo]
+    safety_information: List[SafetyInfo]
 
 class StandardResponse(BaseModel):
     success: bool

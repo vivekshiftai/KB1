@@ -100,21 +100,21 @@ async def generate_maintenance_schedule(pdf_name: str = Path(..., description="N
         
         # Generate maintenance schedule using LLM with enhanced prompt
         logger.info("Generating maintenance schedule with LLM...")
-        maintenance_tasks = await llm_service.generate_maintenance_schedule(top_maintenance_chunks)
+        maintenance_tasks_data = await llm_service.generate_maintenance_schedule(top_maintenance_chunks)
         
         # Log the generated tasks for debugging
-        logger.info(f"Generated {len(maintenance_tasks)} maintenance tasks")
-        for i, task in enumerate(maintenance_tasks):
-            logger.info(f"Task {i+1}: {task.task} (Category: {task.category}, Priority: {task.priority})")
+        logger.info(f"Generated {len(maintenance_tasks_data)} maintenance tasks")
+        for i, task in enumerate(maintenance_tasks_data):
+            logger.info(f"Task {i+1}: {task.get('task', 'Unknown')} (Category: {task.get('category', 'Unknown')}, Priority: {task.get('priority', 'Unknown')})")
         
         processing_time = calculate_processing_time(start_time)
         
-        logger.info(f"Generated {len(maintenance_tasks)} maintenance tasks in {processing_time}")
+        logger.info(f"Generated {len(maintenance_tasks_data)} maintenance tasks in {processing_time}")
         
         return MaintenanceResponse(
             success=True,
-            pdf_name=pdf_name,
-            maintenance_tasks=maintenance_tasks,
+            message="Maintenance tasks generated successfully from PDF analysis",
+            maintenance_tasks=maintenance_tasks_data,
             processing_time=processing_time
         )
         

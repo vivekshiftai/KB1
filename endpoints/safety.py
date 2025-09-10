@@ -102,15 +102,19 @@ async def generate_safety_information(pdf_name: str = Path(..., description="Nam
         
         # Generate safety information using LLM with enhanced prompt
         logger.info("Generating safety information with LLM...")
-        safety_information = await llm_service.generate_safety_information(top_safety_chunks)
+        safety_data = await llm_service.generate_safety_information(top_safety_chunks)
         
         processing_time = calculate_processing_time(start_time)
         
-        logger.info(f"Generated {len(safety_information)} safety items in {processing_time}")
+        safety_precautions = safety_data.get("safety_precautions", [])
+        safety_information = safety_data.get("safety_information", [])
+        
+        logger.info(f"Generated {len(safety_precautions)} safety precautions and {len(safety_information)} safety information items in {processing_time}")
         
         return SafetyResponse(
             success=True,
-            pdf_name=pdf_name,
+            message="Safety precautions generated successfully from PDF analysis",
+            safety_precautions=safety_precautions,
             safety_information=safety_information,
             processing_time=processing_time
         )

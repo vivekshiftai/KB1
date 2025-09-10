@@ -99,16 +99,16 @@ async def generate_rules(pdf_name: str = Path(..., description="Name of the PDF 
         
         # Generate rules using LLM with enhanced prompt
         logger.info("Generating rules with LLM...")
-        rules = await llm_service.generate_rules(top_iot_chunks)
+        rules_data = await llm_service.generate_rules(top_iot_chunks)
         
         processing_time = calculate_processing_time(start_time)
         
-        logger.info(f"Generated {len(rules)} rules in {processing_time}")
+        logger.info(f"Generated {len(rules_data)} rules in {processing_time}")
         
         return RulesResponse(
             success=True,
-            pdf_name=pdf_name,
-            rules=rules,
+            message="Rules generated successfully from PDF analysis",
+            rules=rules_data,
             processing_time=processing_time
         )
         
