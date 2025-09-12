@@ -328,13 +328,18 @@ CRITICAL: Your response must be ONLY a valid JSON object with this exact structu
     "chunks_used": ["List of section headings you referenced"]
 }}
 
-STRICT CONTENT REQUIREMENTS:
-- ONLY use information from the provided documentation chunks
-- DO NOT give generic responses like "refer to section X" or "see documentation"
-- DO NOT say "please refer to" or "check the manual"
-- If information is not available in the chunks, say "This information is not available in the provided documentation"
-- Extract and present the actual information from the chunks
-- Quote specific values, procedures, and details from the documentation
+ABSOLUTE REQUIREMENT: NEVER mention chapter numbers, section numbers, or give generic references like "as described in chapter X". ALWAYS provide the actual content from the documentation chunks.
+
+CRITICAL CONTENT REQUIREMENTS - NO EXCEPTIONS:
+- ONLY use information from the provided documentation chunks above
+- NEVER mention chapter numbers, section numbers, or page references
+- NEVER say "as described in", "refer to", "see chapter", "check section", or "please refer to"
+- NEVER give generic responses like "as described in chapter 4.1" or "refer to section X"
+- ALWAYS provide the actual content from the chunks instead of references
+- If you have the information in the chunks, provide the complete details
+- If you don't have the information, say "This information is not available in the provided documentation"
+- Extract and present the actual steps, procedures, and details from the documentation
+- Quote specific values, measurements, and technical details directly from the chunks
 
 RESPONSE FORMAT REQUIREMENTS:
 - Structure your response in clear, numbered steps (1., 2., 3., etc.)
@@ -364,13 +369,23 @@ Available Section Headings: {chunk_headings}
 
 User Question: {query}{analysis_guidance}
 
-CRITICAL INSTRUCTIONS:
-- ONLY use information from the provided documentation chunks above
-- DO NOT give generic responses like "refer to section X" or "see the manual"
-- DO NOT say "please refer to" or "check the documentation"
-- Extract and present the actual information from the chunks
-- If the information is not in the provided chunks, say "This information is not available in the provided documentation"
-- Quote specific values, procedures, measurements, and technical details from the documentation
+INFORMATION ASSESSMENT:
+Before responding, evaluate:
+1. Do you have complete information to answer this question?
+2. What specific details are available in the provided chunks?
+3. What additional information might be needed for a complete answer?
+4. Can you provide actionable steps based on available information?
+
+MANDATORY RESPONSE RULES - FOLLOW EXACTLY:
+- READ the provided documentation chunks carefully
+- EXTRACT the actual information from the chunks
+- PROVIDE the complete details from the chunks, not references to them
+- NEVER mention "chapter 4.1", "section X", or any chapter/section numbers
+- NEVER say "as described in", "refer to", "see chapter", or "check section"
+- NEVER give generic responses like "as described in chapter 4.1 Preparing for operational readiness"
+- ALWAYS provide the actual steps, procedures, and details from the documentation
+- If the information is in the chunks, provide it completely
+- If the information is not in the chunks, say "This information is not available in the provided documentation"
 
 IMPORTANT FORMATTING INSTRUCTIONS:
 - Structure your response as clear, numbered steps (1., 2., 3., etc.)
@@ -379,6 +394,10 @@ IMPORTANT FORMATTING INSTRUCTIONS:
 - Make each step specific and easy to follow
 - Include proper line breaks between steps for readability
 - Include specific values, measurements, and technical details from the documentation
+
+EXAMPLE OF CORRECT RESPONSE:
+❌ WRONG: "1. Ensure the machine is ready for operation as described in chapter 4.1"
+✅ CORRECT: "1. Check all safety systems are operational. 2. Verify power supply connections. 3. Inspect machine components for damage."
 
 Provide a comprehensive answer based ONLY on the documentation provided above. In the "chunks_used" array, list the exact section headings from the available headings that you referenced in your answer.
 
@@ -418,6 +437,29 @@ Return ONLY the JSON object, no additional text."""
                     
                     # Validate required fields
                     if "response" in parsed_response and "chunks_used" in parsed_response:
+                        # Post-process to remove any remaining generic references
+                        response_text = parsed_response["response"]
+                        
+                        # Check for and fix generic references
+                        generic_patterns = [
+                            r"as described in chapter [\d\.]+[^.]*",
+                            r"refer to chapter [\d\.]+[^.]*",
+                            r"see chapter [\d\.]+[^.]*",
+                            r"check chapter [\d\.]+[^.]*",
+                            r"as described in section [\d\.]+[^.]*",
+                            r"refer to section [\d\.]+[^.]*",
+                            r"see section [\d\.]+[^.]*",
+                            r"check section [\d\.]+[^.]*"
+                        ]
+                        
+                        for pattern in generic_patterns:
+                            if re.search(pattern, response_text, re.IGNORECASE):
+                                logger.warning(f"Found generic reference in response: {pattern}")
+                                # Replace with a more appropriate message
+                                response_text = re.sub(pattern, "Please refer to the specific procedures in the documentation", response_text, flags=re.IGNORECASE)
+                        
+                        parsed_response["response"] = response_text
+                        
                         logger.info(f"Successfully parsed JSON response with {len(parsed_response.get('chunks_used', []))} referenced chunks")
                         return parsed_response
                     else:
@@ -976,6 +1018,54 @@ Return ONLY the JSON object with safety_precautions and safety_information array
             # Stage 4: Generate comprehensive response
             logger.info("Stage 4: Generating comprehensive response")
             final_response = await self.query_with_context(all_chunks, query, query_analysis)
+            
+            # Stage 4.5: Check if response indicates need for more information
+            logger.info("Stage 4.5: Checking response completeness")
+            response_text = final_response.get("response", "")
+            
+            # Simple check for incomplete responses that might need more information
+            needs_more_info = any(phrase in response_text.lower() for phrase in [
+                "need more specific information",
+                "additional information is needed", 
+                "more details are required",
+                "insufficient information"
+            ])
+            
+            if needs_more_info:
+                logger.info("Response indicates need for more information, attempting additional queries")
+                
+                # Try to get more relevant chunks based on the original query
+                additional_queries = [
+                    f"{query} detailed steps procedures",
+                    f"{query} complete instructions",
+                    f"{query} specific requirements"
+                ]
+                
+                for additional_query in additional_queries[:2]:  # Limit to 2 additional queries
+                    try:
+                        logger.info(f"Querying for additional info: {additional_query}")
+                        additional_chunks = await vector_db.query_chunks(
+                            collection_name=collection_name,
+                            query=additional_query,
+                            top_k=3
+                        )
+                        
+                        # Add new chunks (avoid duplicates)
+                        for chunk in additional_chunks:
+                            chunk_id = chunk.get("metadata", {}).get("chunk_index", "")
+                            if not any(existing.get("metadata", {}).get("chunk_index", "") == chunk_id for existing in all_chunks):
+                                all_chunks.append(chunk)
+                        
+                        logger.info(f"Added {len(additional_chunks)} additional chunks for: {additional_query}")
+                        
+                    except Exception as e:
+                        logger.warning(f"Error getting additional chunks for '{additional_query}': {str(e)}")
+                        continue
+                
+                # Regenerate response with additional chunks
+                logger.info("Regenerating response with additional information")
+                final_response = await self.query_with_context(all_chunks, query, query_analysis)
+                processing_stages.append("additional_information_gathering")
             
             # Stage 5: Evaluate response quality
             logger.info("Stage 5: Evaluating response quality")
