@@ -390,18 +390,18 @@ Return ONLY the JSON object, no additional text."""
             
             # Use semaphore to limit concurrent requests
             async with self._api_semaphore:
-            response = self.client.complete(
-                messages=[
-                    SystemMessage(content=system_prompt),
-                    UserMessage(content=user_prompt)
-                ],
-                max_tokens=self.max_completion_tokens,
-                temperature=0.1,
-                top_p=0.1,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
+                response = self.client.complete(
+                    messages=[
+                        SystemMessage(content=system_prompt),
+                        UserMessage(content=user_prompt)
+                    ],
+                    max_tokens=self.max_completion_tokens,
+                    temperature=0.1,
+                    top_p=0.1,
+                    presence_penalty=0.0,
+                    frequency_penalty=0.0,
                     model=model_config["name"]
-            )
+                )
             
             raw_response = response.choices[0].message.content.strip()
             logger.info(f"Raw LLM response using {model_config['name']}: {raw_response[:200]}...")
@@ -461,18 +461,18 @@ Do not include any text before or after the JSON object."""
             
             # Use semaphore to limit concurrent requests
             async with self._api_semaphore:
-            response = self.client.complete(
-                messages=[
-                    SystemMessage(content=system_prompt),
-                    UserMessage(content=prompt)
-                ],
-                max_tokens=1000,
-                temperature=0.1,
-                top_p=0.1,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
+                response = self.client.complete(
+                    messages=[
+                        SystemMessage(content=system_prompt),
+                        UserMessage(content=prompt)
+                    ],
+                    max_tokens=1000,
+                    temperature=0.1,
+                    top_p=0.1,
+                    presence_penalty=0.0,
+                    frequency_penalty=0.0,
                     model=model_config["name"]
-            )
+                )
             
             raw_response = response.choices[0].message.content.strip()
             logger.info(f"Raw analysis response using {model_config['name']}: {raw_response[:200]}...")
@@ -714,18 +714,18 @@ Return ONLY the JSON object with the rules array."""
             
             # Use semaphore to limit concurrent requests
             async with self._api_semaphore:
-            response = self.client.complete(
-                messages=[
-                    SystemMessage(content=system_prompt),
-                    UserMessage(content=user_prompt)
-                ],
-                max_tokens=self.max_completion_tokens,
-                temperature=0.2,
-                top_p=0.1,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
+                response = self.client.complete(
+                    messages=[
+                        SystemMessage(content=system_prompt),
+                        UserMessage(content=user_prompt)
+                    ],
+                    max_tokens=self.max_completion_tokens,
+                    temperature=0.2,
+                    top_p=0.1,
+                    presence_penalty=0.0,
+                    frequency_penalty=0.0,
                     model=model_config["name"]
-            )
+                )
             
             raw_response = response.choices[0].message.content.strip()
             logger.info(f"Raw LLM response for rules using {model_config['name']}: {raw_response[:200]}...")
@@ -873,18 +873,18 @@ Return ONLY the JSON object with safety_precautions and safety_information array
             
             # Use semaphore to limit concurrent requests
             async with self._api_semaphore:
-            response = self.client.complete(
-                messages=[
-                    SystemMessage(content=system_prompt),
-                    UserMessage(content=user_prompt)
-                ],
-                max_tokens=self.max_completion_tokens,
-                temperature=0.2,
-                top_p=0.1,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
+                response = self.client.complete(
+                    messages=[
+                        SystemMessage(content=system_prompt),
+                        UserMessage(content=user_prompt)
+                    ],
+                    max_tokens=self.max_completion_tokens,
+                    temperature=0.2,
+                    top_p=0.1,
+                    presence_penalty=0.0,
+                    frequency_penalty=0.0,
                     model=model_config["name"]
-            )
+                )
             
             raw_response = response.choices[0].message.content.strip()
             logger.info(f"Raw LLM response for safety using {model_config['name']}: {raw_response[:200]}...")
@@ -1165,18 +1165,18 @@ Return ONLY the JSON object with the maintenance_tasks array."""
             
             # Use semaphore to limit concurrent requests
             async with self._api_semaphore:
-            response = self.client.complete(
-                messages=[
-                    SystemMessage(content=system_prompt),
-                    UserMessage(content=user_prompt)
-                ],
-                max_tokens=self.max_completion_tokens,
-                temperature=0.2,
-                top_p=0.1,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
+                response = self.client.complete(
+                    messages=[
+                        SystemMessage(content=system_prompt),
+                        UserMessage(content=user_prompt)
+                    ],
+                    max_tokens=self.max_completion_tokens,
+                    temperature=0.2,
+                    top_p=0.1,
+                    presence_penalty=0.0,
+                    frequency_penalty=0.0,
                     model=model_config["name"]
-            )
+                )
             
             raw_response = response.choices[0].message.content.strip()
             logger.info(f"Raw LLM response for maintenance using {model_config['name']}: {raw_response[:200]}...")
