@@ -385,8 +385,10 @@ Please provide a comprehensive answer that addresses all aspects of the original
             else:
                 enhanced_query = original_query
             
-            llm_result = await self.llm_service.query_with_context(
-                state["current_chunks"], 
+            # Use dynamic query processing for comprehensive responses
+            llm_result = await self.llm_service.dynamic_query_processing(
+                self.vector_db,
+                state["collection_name"],
                 enhanced_query,
                 state.get("query_analysis")
             )
@@ -412,15 +414,31 @@ Please provide a comprehensive answer that addresses all aspects of the original
         individual_queries = state["individual_queries"]
         chunks = state["current_chunks"]
         
-        # Quality metrics - always validate against original query
-        quality_metrics = {
-            "response_length": len(response),
-            "has_content": len(response.strip()) > 50,
-            "mentions_original_query": any(word.lower() in response.lower() for word in original_query.split()),
-            "mentions_individual_queries": sum(1 for q in individual_queries if any(word.lower() in response.lower() for word in q.split())),
-            "uses_chunks": len(state["llm_response"].get("chunks_used", [])) > 0,
-            "confidence_score": 0.0
-        }
+        # Quality metrics - use dynamic processing evaluation if available
+        if "evaluation" in state["llm_response"]:
+            # Use evaluation from dynamic processing
+            evaluation = state["llm_response"]["evaluation"]
+            quality_metrics = {
+                "response_length": len(response),
+                "has_content": evaluation.get("quality_metrics", {}).get("has_content", False),
+                "mentions_original_query": evaluation.get("quality_metrics", {}).get("addresses_query", False),
+                "mentions_individual_queries": sum(1 for q in individual_queries if any(word.lower() in response.lower() for word in q.split())),
+                "uses_chunks": evaluation.get("quality_metrics", {}).get("uses_chunks", False),
+                "confidence_score": evaluation.get("confidence_score", 0.0),
+                "is_comprehensive": evaluation.get("is_comprehensive", False),
+                "has_specific_details": evaluation.get("quality_metrics", {}).get("has_specific_details", False),
+                "no_generic_references": evaluation.get("quality_metrics", {}).get("no_generic_references", False)
+            }
+        else:
+            # Fallback to original validation
+            quality_metrics = {
+                "response_length": len(response),
+                "has_content": len(response.strip()) > 50,
+                "mentions_original_query": any(word.lower() in response.lower() for word in original_query.split()),
+                "mentions_individual_queries": sum(1 for q in individual_queries if any(word.lower() in response.lower() for word in q.split())),
+                "uses_chunks": len(state["llm_response"].get("chunks_used", [])) > 0,
+                "confidence_score": 0.0
+            }
         
         # Calculate confidence score using quality weights
         confidence = 0.0
@@ -589,16 +607,28 @@ Please decide:
             # Collect images and tables from used chunks
             images, tables = self._collect_media_from_chunks(state)
             
-            # Create final response
+            # Create final response with dynamic processing information
             final_response = QueryResponse(
                 success=True,
-                message="Query processed successfully with LangGraph workflow",
+                message="Query processed successfully with dynamic information gathering",
                 response=state["llm_response"].get("response", ""),
                 chunks_used=state["llm_response"].get("chunks_used", []),
                 images=images,
                 tables=tables,
                 processing_time=calculate_processing_time(state["start_time"])
             )
+            
+            # Add dynamic processing metadata if available
+            if "processing_stages" in state["llm_response"]:
+                final_response.processing_stages = state["llm_response"]["processing_stages"]
+            if "confidence_score" in state["llm_response"]:
+                final_response.confidence_score = state["llm_response"]["confidence_score"]
+            if "initial_chunks_count" in state["llm_response"]:
+                final_response.initial_chunks_count = state["llm_response"]["initial_chunks_count"]
+            if "total_chunks_count" in state["llm_response"]:
+                final_response.total_chunks_count = state["llm_response"]["total_chunks_count"]
+            if "collection_used" in state["llm_response"]:
+                final_response.collection_used = state["llm_response"]["collection_used"]
             
             state["final_response"] = final_response
             state["images"] = images

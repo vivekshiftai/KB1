@@ -131,6 +131,129 @@ class LLMService:
             logger.warning(f"Error extracting chunk content: {str(e)}")
             return ""
 
+    async def assess_information_sufficiency(self, chunks: List[Dict[str, Any]], query: str) -> Dict[str, Any]:
+        """Assess if we have sufficient information to answer the query completely"""
+        logger.info(f"Assessing information sufficiency for query: {query}")
+        
+        if not chunks:
+            return {
+                "has_sufficient_info": False,
+                "missing_information": ["No information available"],
+                "additional_queries_needed": [query],
+                "confidence_score": 0.0,
+                "reasoning": "No chunks available for analysis"
+            }
+        
+        # Prepare context from chunks
+        context_parts = []
+        for chunk in chunks:
+            try:
+                if "metadata" in chunk and "document" in chunk:
+                    heading = chunk.get("metadata", {}).get("heading", "")
+                    content = chunk.get("document", "")
+                else:
+                    heading = chunk.get("heading", "")
+                    content = chunk.get("text", chunk.get("content", ""))
+                
+                if content:
+                    context_parts.append(f"**{heading}**\n{content[:500]}...")  # Truncate for assessment
+            except Exception as e:
+                logger.warning(f"Error processing chunk for assessment: {str(e)}")
+                continue
+        
+        context = "\n\n".join(context_parts)
+        
+        assessment_prompt = f"""Analyze if you have sufficient information to answer the user's question completely.
+
+Available Information:
+{context}
+
+User Question: {query}
+
+CRITICAL: Respond with ONLY a valid JSON object with this exact structure:
+{{
+    "has_sufficient_info": true/false,
+    "missing_information": ["list of specific missing information"],
+    "additional_queries_needed": ["specific search terms for missing info"],
+    "confidence_score": 0.0-1.0,
+    "reasoning": "brief explanation of assessment"
+}}
+
+ASSESSMENT CRITERIA:
+- Can you provide a complete, actionable answer?
+- Do you have all necessary steps, procedures, or details?
+- Are there any gaps that would require "refer to section X" responses?
+- Can you include specific values, measurements, and technical details?
+
+If missing information, provide specific search terms that would help find the missing details.
+
+Return ONLY the JSON object, no additional text."""
+        
+        try:
+            # Get analysis model configuration
+            model_config = self._get_model_config("analysis")
+            
+            # Use semaphore to limit concurrent requests
+            async with self._api_semaphore:
+                response = self.client.complete(
+                    messages=[
+                        SystemMessage(content=assessment_prompt),
+                        UserMessage(content="Assess the information sufficiency.")
+                    ],
+                    max_tokens=1000,
+                    temperature=0.1,
+                    top_p=0.1,
+                    presence_penalty=0.0,
+                    frequency_penalty=0.0,
+                    model=model_config["name"]
+                )
+            
+            raw_response = response.choices[0].message.content.strip()
+            logger.info(f"Assessment response: {raw_response[:200]}...")
+            
+            # Parse JSON response
+            try:
+                import json
+                json_start = raw_response.find('{')
+                json_end = raw_response.rfind('}') + 1
+                
+                if json_start != -1 and json_end > json_start:
+                    json_str = raw_response[json_start:json_end]
+                    assessment = json.loads(json_str)
+                    
+                    # Validate required fields
+                    required_fields = ["has_sufficient_info", "missing_information", "additional_queries_needed", "confidence_score", "reasoning"]
+                    for field in required_fields:
+                        if field not in assessment:
+                            logger.warning(f"Missing field {field} in assessment response")
+                    
+                    logger.info(f"Information assessment: sufficient={assessment.get('has_sufficient_info')}, confidence={assessment.get('confidence_score')}")
+                    return assessment
+                else:
+                    raise ValueError("No valid JSON found in response")
+                    
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse assessment JSON: {str(e)}")
+                logger.error(f"Raw response: {raw_response}")
+                # Fallback assessment
+                return {
+                    "has_sufficient_info": False,
+                    "missing_information": ["Unable to assess information"],
+                    "additional_queries_needed": [query],
+                    "confidence_score": 0.0,
+                    "reasoning": f"JSON parsing error: {str(e)}"
+                }
+            
+        except Exception as e:
+            logger.error(f"Error in information assessment: {str(e)}")
+            return {
+                "has_sufficient_info": False,
+                "missing_information": ["Assessment failed"],
+                "additional_queries_needed": [query],
+                "confidence_score": 0.0,
+                "reasoning": f"Assessment error: {str(e)}"
+            }
+
     async def query_with_context(self, chunks: List[Dict[str, Any]], query: str, query_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Query with context chunks using structured JSON response"""
         logger.info(f"Processing query with {len(chunks)} context chunks")
@@ -267,18 +390,18 @@ Return ONLY the JSON object, no additional text."""
             
             # Use semaphore to limit concurrent requests
             async with self._api_semaphore:
-                response = self.client.complete(
-                    messages=[
-                        SystemMessage(content=system_prompt),
-                        UserMessage(content=user_prompt)
-                    ],
-                    max_tokens=self.max_completion_tokens,
-                    temperature=0.1,
-                    top_p=0.1,
-                    presence_penalty=0.0,
-                    frequency_penalty=0.0,
+            response = self.client.complete(
+                messages=[
+                    SystemMessage(content=system_prompt),
+                    UserMessage(content=user_prompt)
+                ],
+                max_tokens=self.max_completion_tokens,
+                temperature=0.1,
+                top_p=0.1,
+                presence_penalty=0.0,
+                frequency_penalty=0.0,
                     model=model_config["name"]
-                )
+            )
             
             raw_response = response.choices[0].message.content.strip()
             logger.info(f"Raw LLM response using {model_config['name']}: {raw_response[:200]}...")
@@ -338,18 +461,18 @@ Do not include any text before or after the JSON object."""
             
             # Use semaphore to limit concurrent requests
             async with self._api_semaphore:
-                response = self.client.complete(
-                    messages=[
-                        SystemMessage(content=system_prompt),
-                        UserMessage(content=prompt)
-                    ],
-                    max_tokens=1000,
-                    temperature=0.1,
-                    top_p=0.1,
-                    presence_penalty=0.0,
-                    frequency_penalty=0.0,
+            response = self.client.complete(
+                messages=[
+                    SystemMessage(content=system_prompt),
+                    UserMessage(content=prompt)
+                ],
+                max_tokens=1000,
+                temperature=0.1,
+                top_p=0.1,
+                presence_penalty=0.0,
+                frequency_penalty=0.0,
                     model=model_config["name"]
-                )
+            )
             
             raw_response = response.choices[0].message.content.strip()
             logger.info(f"Raw analysis response using {model_config['name']}: {raw_response[:200]}...")
@@ -591,18 +714,18 @@ Return ONLY the JSON object with the rules array."""
             
             # Use semaphore to limit concurrent requests
             async with self._api_semaphore:
-                response = self.client.complete(
-                    messages=[
-                        SystemMessage(content=system_prompt),
-                        UserMessage(content=user_prompt)
-                    ],
-                    max_tokens=self.max_completion_tokens,
-                    temperature=0.2,
-                    top_p=0.1,
-                    presence_penalty=0.0,
-                    frequency_penalty=0.0,
+            response = self.client.complete(
+                messages=[
+                    SystemMessage(content=system_prompt),
+                    UserMessage(content=user_prompt)
+                ],
+                max_tokens=self.max_completion_tokens,
+                temperature=0.2,
+                top_p=0.1,
+                presence_penalty=0.0,
+                frequency_penalty=0.0,
                     model=model_config["name"]
-                )
+            )
             
             raw_response = response.choices[0].message.content.strip()
             logger.info(f"Raw LLM response for rules using {model_config['name']}: {raw_response[:200]}...")
@@ -750,18 +873,18 @@ Return ONLY the JSON object with safety_precautions and safety_information array
             
             # Use semaphore to limit concurrent requests
             async with self._api_semaphore:
-                response = self.client.complete(
-                    messages=[
-                        SystemMessage(content=system_prompt),
-                        UserMessage(content=user_prompt)
-                    ],
-                    max_tokens=self.max_completion_tokens,
-                    temperature=0.2,
-                    top_p=0.1,
-                    presence_penalty=0.0,
-                    frequency_penalty=0.0,
+            response = self.client.complete(
+                messages=[
+                    SystemMessage(content=system_prompt),
+                    UserMessage(content=user_prompt)
+                ],
+                max_tokens=self.max_completion_tokens,
+                temperature=0.2,
+                top_p=0.1,
+                presence_penalty=0.0,
+                frequency_penalty=0.0,
                     model=model_config["name"]
-                )
+            )
             
             raw_response = response.choices[0].message.content.strip()
             logger.info(f"Raw LLM response for safety using {model_config['name']}: {raw_response[:200]}...")
@@ -790,6 +913,163 @@ Return ONLY the JSON object with safety_precautions and safety_information array
         except Exception as e:
             logger.error(f"Error generating safety information: {str(e)}")
             return {"safety_precautions": [], "safety_information": []}
+
+    async def dynamic_query_processing(self, vector_db, collection_name: str, query: str, query_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Dynamic information gathering flow with multi-stage processing"""
+        logger.info(f"Starting dynamic query processing for: {query}")
+        logger.info(f"Using collection: {collection_name}")
+        
+        try:
+            # Stage 1: Initial query to get base chunks
+            logger.info(f"Stage 1: Getting initial chunks from collection: {collection_name}")
+            initial_chunks = await vector_db.query_chunks(
+                collection_name=collection_name,
+                query=query,
+                top_k=5
+            )
+            
+            if not initial_chunks:
+                logger.warning("No initial chunks found")
+                return {
+                    "response": f"I don't have access to specific documentation about '{query}'. Please ensure the document is properly uploaded and processed.",
+                    "chunks_used": [],
+                    "processing_stages": ["initial_query"],
+                    "confidence_score": 0.0
+                }
+            
+            # Stage 2: Assess information sufficiency
+            logger.info("Stage 2: Assessing information sufficiency")
+            assessment = await self.assess_information_sufficiency(initial_chunks, query)
+            
+            all_chunks = initial_chunks.copy()
+            processing_stages = ["initial_query", "assessment"]
+            
+            # Stage 3: Get additional information if needed
+            if not assessment.get("has_sufficient_info", False):
+                logger.info("Stage 3: Gathering additional information")
+                logger.info(f"Using same collection for additional queries: {collection_name}")
+                additional_queries = assessment.get("additional_queries_needed", [])
+                
+                for additional_query in additional_queries[:3]:  # Limit to 3 additional queries
+                    try:
+                        logger.info(f"Querying for additional info: {additional_query} in collection: {collection_name}")
+                        additional_chunks = await vector_db.query_chunks(
+                            collection_name=collection_name,
+                            query=additional_query,
+                            top_k=3
+                        )
+                        
+                        # Add new chunks (avoid duplicates)
+                        for chunk in additional_chunks:
+                            chunk_id = chunk.get("metadata", {}).get("chunk_index", "")
+                            if not any(existing.get("metadata", {}).get("chunk_index", "") == chunk_id for existing in all_chunks):
+                                all_chunks.append(chunk)
+                        
+                        logger.info(f"Added {len(additional_chunks)} additional chunks for: {additional_query}")
+                        
+                    except Exception as e:
+                        logger.warning(f"Error getting additional chunks for '{additional_query}': {str(e)}")
+                        continue
+                
+                processing_stages.append("additional_queries")
+            
+            # Stage 4: Generate comprehensive response
+            logger.info("Stage 4: Generating comprehensive response")
+            final_response = await self.query_with_context(all_chunks, query, query_analysis)
+            
+            # Stage 5: Evaluate response quality
+            logger.info("Stage 5: Evaluating response quality")
+            evaluation = await self.evaluate_response_quality(final_response, query, assessment)
+            
+            # Combine all information
+            result = {
+                **final_response,
+                "processing_stages": processing_stages,
+                "initial_chunks_count": len(initial_chunks),
+                "total_chunks_count": len(all_chunks),
+                "assessment": assessment,
+                "evaluation": evaluation,
+                "confidence_score": evaluation.get("confidence_score", 0.0),
+                "collection_used": collection_name  # Track which collection was used throughout
+            }
+            
+            logger.info(f"Dynamic processing completed: {len(processing_stages)} stages, {len(all_chunks)} total chunks, confidence: {result['confidence_score']}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in dynamic query processing: {str(e)}")
+            return {
+                "response": f"Error processing query: {str(e)}",
+                "chunks_used": [],
+                "processing_stages": ["error"],
+                "confidence_score": 0.0,
+                "error": str(e)
+            }
+
+    async def evaluate_response_quality(self, response: Dict[str, Any], query: str, assessment: Dict[str, Any]) -> Dict[str, Any]:
+        """Evaluate the quality and completeness of the response"""
+        logger.info("Evaluating response quality")
+        
+        try:
+            response_text = response.get("response", "")
+            chunks_used = response.get("chunks_used", [])
+            
+            # Quality metrics
+            quality_metrics = {
+                "response_length": len(response_text),
+                "has_content": len(response_text.strip()) > 50,
+                "uses_chunks": len(chunks_used) > 0,
+                "addresses_query": any(word.lower() in response_text.lower() for word in query.split()),
+                "has_specific_details": any(char.isdigit() for char in response_text),  # Has numbers/measurements
+                "has_procedural_steps": "1." in response_text or "step" in response_text.lower(),
+                "no_generic_references": not any(phrase in response_text.lower() for phrase in [
+                    "refer to", "see section", "check the", "please refer", "see documentation"
+                ])
+            }
+            
+            # Calculate confidence score
+            confidence_score = 0.0
+            if quality_metrics["has_content"]:
+                confidence_score += 0.2
+            if quality_metrics["uses_chunks"]:
+                confidence_score += 0.2
+            if quality_metrics["addresses_query"]:
+                confidence_score += 0.2
+            if quality_metrics["has_specific_details"]:
+                confidence_score += 0.15
+            if quality_metrics["has_procedural_steps"]:
+                confidence_score += 0.15
+            if quality_metrics["no_generic_references"]:
+                confidence_score += 0.1
+            
+            # Bonus for addressing assessment concerns
+            if assessment.get("has_sufficient_info", False):
+                confidence_score += 0.1
+            
+            # Cap at 1.0
+            confidence_score = min(confidence_score, 1.0)
+            
+            evaluation = {
+                "confidence_score": confidence_score,
+                "quality_metrics": quality_metrics,
+                "is_comprehensive": confidence_score >= 0.7,
+                "needs_improvement": confidence_score < 0.5,
+                "assessment_met": assessment.get("has_sufficient_info", False)
+            }
+            
+            logger.info(f"Response evaluation: confidence={confidence_score:.2f}, comprehensive={evaluation['is_comprehensive']}")
+            return evaluation
+            
+        except Exception as e:
+            logger.error(f"Error evaluating response quality: {str(e)}")
+            return {
+                "confidence_score": 0.0,
+                "quality_metrics": {},
+                "is_comprehensive": False,
+                "needs_improvement": True,
+                "assessment_met": False,
+                "error": str(e)
+            }
 
     async def generate_maintenance_schedule(self, chunks: List[Dict[str, Any]]) -> str:
         """Generate maintenance schedule from chunks"""
@@ -885,18 +1165,18 @@ Return ONLY the JSON object with the maintenance_tasks array."""
             
             # Use semaphore to limit concurrent requests
             async with self._api_semaphore:
-                response = self.client.complete(
-                    messages=[
-                        SystemMessage(content=system_prompt),
-                        UserMessage(content=user_prompt)
-                    ],
-                    max_tokens=self.max_completion_tokens,
-                    temperature=0.2,
-                    top_p=0.1,
-                    presence_penalty=0.0,
-                    frequency_penalty=0.0,
+            response = self.client.complete(
+                messages=[
+                    SystemMessage(content=system_prompt),
+                    UserMessage(content=user_prompt)
+                ],
+                max_tokens=self.max_completion_tokens,
+                temperature=0.2,
+                top_p=0.1,
+                presence_penalty=0.0,
+                frequency_penalty=0.0,
                     model=model_config["name"]
-                )
+            )
             
             raw_response = response.choices[0].message.content.strip()
             logger.info(f"Raw LLM response for maintenance using {model_config['name']}: {raw_response[:200]}...")

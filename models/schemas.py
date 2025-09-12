@@ -36,6 +36,12 @@ class QueryResponse(BaseModel):
     images: List[ImageData]  # Actual image data instead of URLs
     tables: List[str]
     processing_time: str
+    # Dynamic processing metadata
+    processing_stages: Optional[List[str]] = None
+    confidence_score: Optional[float] = None
+    initial_chunks_count: Optional[int] = None
+    total_chunks_count: Optional[int] = None
+    collection_used: Optional[str] = None
 
 class PDFListItem(BaseModel):
     collection_name: str
