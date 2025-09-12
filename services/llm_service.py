@@ -205,12 +205,21 @@ CRITICAL: Your response must be ONLY a valid JSON object with this exact structu
     "chunks_used": ["List of section headings you referenced"]
 }}
 
+STRICT CONTENT REQUIREMENTS:
+- ONLY use information from the provided documentation chunks
+- DO NOT give generic responses like "refer to section X" or "see documentation"
+- DO NOT say "please refer to" or "check the manual"
+- If information is not available in the chunks, say "This information is not available in the provided documentation"
+- Extract and present the actual information from the chunks
+- Quote specific values, procedures, and details from the documentation
+
 RESPONSE FORMAT REQUIREMENTS:
 - Structure your response in clear, numbered steps (1., 2., 3., etc.)
 - Use bullet points or numbered lists for procedures and instructions
 - Break down complex processes into sequential steps
 - Make each step clear and actionable
 - Use proper formatting with line breaks between steps
+- Include specific values, measurements, and technical details from the documentation
 
 Do not include any text before or after the JSON object."""
         
@@ -232,14 +241,23 @@ Available Section Headings: {chunk_headings}
 
 User Question: {query}{analysis_guidance}
 
+CRITICAL INSTRUCTIONS:
+- ONLY use information from the provided documentation chunks above
+- DO NOT give generic responses like "refer to section X" or "see the manual"
+- DO NOT say "please refer to" or "check the documentation"
+- Extract and present the actual information from the chunks
+- If the information is not in the provided chunks, say "This information is not available in the provided documentation"
+- Quote specific values, procedures, measurements, and technical details from the documentation
+
 IMPORTANT FORMATTING INSTRUCTIONS:
 - Structure your response as clear, numbered steps (1., 2., 3., etc.)
 - Break down procedures into sequential, actionable steps
 - Use bullet points for lists and sub-items
 - Make each step specific and easy to follow
 - Include proper line breaks between steps for readability
+- Include specific values, measurements, and technical details from the documentation
 
-Provide a comprehensive answer based on the documentation. In the "chunks_used" array, list the exact section headings from the available headings that you referenced in your answer.
+Provide a comprehensive answer based ONLY on the documentation provided above. In the "chunks_used" array, list the exact section headings from the available headings that you referenced in your answer.
 
 Return ONLY the JSON object, no additional text."""
         
