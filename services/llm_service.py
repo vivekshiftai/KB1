@@ -410,13 +410,24 @@ Do not include any text before or after the JSON object."""
                 if "metadata" in chunk and "document" in chunk:
                     heading = chunk.get("metadata", {}).get("heading", "")
                     content = chunk.get("document", "")
+                    # Extract tables from metadata if available
+                    tables = chunk.get("metadata", {}).get("tables", [])
                 else:
                     heading = chunk.get("heading", "")
                     content = chunk.get("text", chunk.get("content", ""))
+                    tables = chunk.get("tables", [])
                 
                 if content:
                     # Include full content including tables, specifications, and all data
-                    context_parts.append(f"**{heading}**\n{content}")
+                    context_text = f"**{heading}**\n{content}"
+                    
+                    # Add tables to context if they exist
+                    if tables:
+                        context_text += f"\n\n**Tables in this section:**\n"
+                        for i, table in enumerate(tables, 1):
+                            context_text += f"\nTable {i}:\n{table}\n"
+                    
+                    context_parts.append(context_text)
             except Exception as e:
                 logger.warning(f"Error processing chunk for rules: {str(e)}")
                 continue
@@ -474,6 +485,15 @@ Generate a comprehensive set of IoT monitoring rules that cover:
 3. Performance metrics (power consumption, efficiency, output levels)
 4. Maintenance indicators (vibration levels, wear indicators, performance degradation)
 5. Operational conditions (operating ranges, normal vs abnormal conditions)
+
+CRITICAL: The documentation includes tables with specific IoT monitoring data. Use the table information extensively for:
+- Exact threshold values from specification tables (temperature, pressure, voltage, current limits)
+- Precise monitoring parameters from technical data tables
+- Specific sensor ranges and operating conditions from equipment tables
+- Performance metrics and efficiency data from measurement tables
+- Safety limits and alert thresholds from safety specification tables
+
+Pay special attention to any tables containing technical specifications, operating parameters, or monitoring data as these contain the most relevant IoT monitoring information.
 
 CRITICAL IoT MONITORING REQUIREMENTS:
 - ONLY create rules for SENSOR-MEASURABLE parameters that IoT devices can monitor
@@ -541,13 +561,24 @@ Return ONLY the JSON object with the rules array."""
                 if "metadata" in chunk and "document" in chunk:
                     heading = chunk.get("metadata", {}).get("heading", "")
                     content = chunk.get("document", "")
+                    # Extract tables from metadata if available
+                    tables = chunk.get("metadata", {}).get("tables", [])
                 else:
                     heading = chunk.get("heading", "")
                     content = chunk.get("text", chunk.get("content", ""))
+                    tables = chunk.get("tables", [])
                 
                 if content:
                     # Include full content including tables, specifications, and all data
-                    context_parts.append(f"**{heading}**\n{content}")
+                    context_text = f"**{heading}**\n{content}"
+                    
+                    # Add tables to context if they exist
+                    if tables:
+                        context_text += f"\n\n**Tables in this section:**\n"
+                        for i, table in enumerate(tables, 1):
+                            context_text += f"\nTable {i}:\n{table}\n"
+                    
+                    context_parts.append(context_text)
             except Exception as e:
                 logger.warning(f"Error processing chunk for safety: {str(e)}")
                 continue
@@ -609,6 +640,18 @@ Generate detailed safety information covering:
 4. Emergency procedures
 5. Safety warnings and precautions
 6. Risk assessments
+7. Error codes and their meanings
+8. Alert conditions and responses
+
+CRITICAL: The documentation includes tables with specific safety data. Use the table information extensively for:
+- Exact error codes and their descriptions from error code tables
+- Precise safety limits and thresholds (temperature, pressure, voltage, current)
+- Specific precautionary measures from safety tables
+- Alert conditions and their severity levels from alert tables
+- PPE requirements and specifications from safety tables
+- Emergency response procedures and contact information
+
+Pay special attention to any tables labeled as "error codes", "precaution", "alert", or "safety" as these contain the most relevant safety data.
 
 IMPORTANT: Use specific numerical values from the documentation for:
 - Temperature limits (e.g., "60°C", "100°F")
@@ -675,13 +718,24 @@ Return ONLY the JSON object with safety_precautions and safety_information array
                 if "metadata" in chunk and "document" in chunk:
                     heading = chunk.get("metadata", {}).get("heading", "")
                     content = chunk.get("document", "")
+                    # Extract tables from metadata if available
+                    tables = chunk.get("metadata", {}).get("tables", [])
                 else:
                     heading = chunk.get("heading", "")
                     content = chunk.get("text", chunk.get("content", ""))
+                    tables = chunk.get("tables", [])
                 
                 if content:
                     # For maintenance, always include all content including tables
-                    context_parts.append(f"**{heading}**\n{content}")
+                    context_text = f"**{heading}**\n{content}"
+                    
+                    # Add tables to context if they exist
+                    if tables:
+                        context_text += f"\n\n**Tables in this section:**\n"
+                        for i, table in enumerate(tables, 1):
+                            context_text += f"\nTable {i}:\n{table}\n"
+                    
+                    context_parts.append(context_text)
             except Exception as e:
                 logger.warning(f"Error processing chunk for maintenance: {str(e)}")
                 continue
@@ -727,10 +781,14 @@ Generate a detailed maintenance schedule covering:
 5. Inspection checklists
 6. Maintenance priorities
 
-IMPORTANT: Use specific numerical values from the documentation for:
-- Frequencies (e.g., "every 30 days", "monthly", "every 1000 hours")
-- Durations (e.g., "2 hours", "30 minutes", "4 hours")
-- Quantities and measurements from tables and specifications
+CRITICAL: The documentation includes tables with specific maintenance data. Use the table information extensively for:
+- Exact frequencies from maintenance schedules (e.g., "every 30 days", "monthly", "every 1000 hours")
+- Precise durations from maintenance procedures (e.g., "2 hours", "30 minutes", "4 hours")
+- Specific quantities, measurements, and specifications from tables
+- Tool requirements and material lists from maintenance tables
+- Priority levels and categories from maintenance schedules
+
+Pay special attention to any tables labeled as "maintenance list", "maintenance tasks", "maintenance schedules", or "maintenance procedure" as these contain the most relevant data.
 
 Return ONLY the JSON object with the maintenance_tasks array."""
         

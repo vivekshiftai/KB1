@@ -42,26 +42,19 @@ async def generate_safety_information(pdf_name: str = Path(..., description="Nam
         # Get chunks from vector database with smart filtering for safety content
         logger.info("Retrieving safety-relevant chunks from vector database...")
         
-        # Define safety-related keywords for smart filtering
+        # Define safety-specific keywords for smart filtering
         safety_keywords = [
-            "safety", "warning", "caution", "danger", "hazard", "risk", "emergency", "protective",
-            "injury", "damage", "failure", "malfunction", "overheating", "overload", "pressure",
-            "temperature", "voltage", "current", "shock", "burn", "cut", "crush", "fall",
-            "ppe", "helmet", "gloves", "goggles", "mask", "vest", "boots", "ear protection",
-            "lockout", "tagout", "isolation", "depressurize", "de-energize", "ventilation",
-            "flammable", "explosive", "toxic", "corrosive", "radiation", "noise", "vibration",
-            "maintenance", "repair", "installation", "operation", "startup", "shutdown",
-            "procedure", "instruction", "manual", "guide", "protocol", "standard", "regulation"
+            "error codes", "precaution", "alert", "safety"
         ]
         
         # Query for safety-relevant chunks using keywords
         safety_chunks = []
-        for keyword in safety_keywords[:3]:  # Use top 3 keywords for 15 total chunks
+        for keyword in safety_keywords:  # Use all 4 safety keywords
             try:
                 keyword_chunks = await vector_db.query_chunks(
                     collection_name=collection_name,
                     query=keyword,
-                    top_k=5  # Fetch 5 chunks per keyword (15 total)
+                    top_k=5  # Fetch 5 chunks per keyword (20 total)
                 )
                 safety_chunks.extend(keyword_chunks)
                 logger.info(f"Found {len(keyword_chunks)} chunks for keyword: {keyword}")
@@ -69,7 +62,7 @@ async def generate_safety_information(pdf_name: str = Path(..., description="Nam
                 logger.warning(f"Error querying for keyword '{keyword}': {str(e)}")
                 continue
         
-        # Remove duplicates and get top 20 most relevant chunks
+        # Remove duplicates and get top 15 chunks
         unique_chunks = []
         seen_chunks = set()
         for chunk in safety_chunks:
@@ -78,9 +71,9 @@ async def generate_safety_information(pdf_name: str = Path(..., description="Nam
                 unique_chunks.append(chunk)
                 seen_chunks.add(chunk_id)
         
-        # Sort by relevance (lower distance = higher relevance) and take top 20
+        # Sort by relevance (lower distance = higher relevance) and take top 15
         unique_chunks.sort(key=lambda x: x.get("distance", 1.0))
-        top_safety_chunks = unique_chunks[:20]
+        top_safety_chunks = unique_chunks[:15]
         
         logger.info(f"Found {len(top_safety_chunks)} unique safety-relevant chunks out of {len(safety_chunks)} total chunks")
         
@@ -89,7 +82,7 @@ async def generate_safety_information(pdf_name: str = Path(..., description="Nam
             # Fallback to general chunks if no safety-specific content found
             top_safety_chunks = await vector_db.get_all_chunks(
                 collection_name=collection_name,
-                limit=20
+                limit=15
             )
         
         if not top_safety_chunks:

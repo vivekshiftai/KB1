@@ -42,24 +42,19 @@ async def generate_maintenance_schedule(pdf_name: str = Path(..., description="N
         # Get chunks from vector database with smart filtering for maintenance content
         logger.info("Retrieving maintenance-relevant chunks from vector database...")
         
-        # Define maintenance-related keywords for smart filtering
+        # Define maintenance-specific keywords for smart filtering
         maintenance_keywords = [
-            "maintenance", "service", "inspection", "check", "clean", "lubricate", "calibrate",
-            "replace", "repair", "adjust", "tighten", "monitor", "test", "verify", "examine",
-            "schedule", "routine", "preventive", "periodic", "daily", "weekly", "monthly", "annual",
-            "filter", "oil", "grease", "bearing", "belt", "motor", "pump", "valve", "sensor",
-            "temperature", "pressure", "vibration", "noise", "wear", "damage", "failure",
-            "safety", "warning", "caution", "procedure", "instruction", "manual", "guide"
+            "maintenance list", "maintenance tasks", "maintenance schedules", "maintenance procedure"
         ]
         
         # Query for maintenance-relevant chunks using keywords
         maintenance_chunks = []
-        for keyword in maintenance_keywords[:3]:  # Use top 3 keywords for 10 total chunks
+        for keyword in maintenance_keywords:  # Use all 4 maintenance keywords
             try:
                 keyword_chunks = await vector_db.query_chunks(
                     collection_name=collection_name,
                     query=keyword,
-                    top_k=3  # Fetch 3 chunks per keyword (9 total)
+                    top_k=3  # Fetch 3 chunks per keyword (12 total)
                 )
                 maintenance_chunks.extend(keyword_chunks)
                 logger.info(f"Found {len(keyword_chunks)} chunks for keyword: {keyword}")
@@ -67,19 +62,7 @@ async def generate_maintenance_schedule(pdf_name: str = Path(..., description="N
                 logger.warning(f"Error querying for keyword '{keyword}': {str(e)}")
                 continue
         
-        # Add one more chunk to reach 10 total
-        if len(maintenance_chunks) < 10:
-            try:
-                additional_chunks = await vector_db.query_chunks(
-                    collection_name=collection_name,
-                    query="maintenance",
-                    top_k=1
-                )
-                maintenance_chunks.extend(additional_chunks)
-            except Exception as e:
-                logger.warning(f"Error getting additional maintenance chunk: {str(e)}")
-        
-        # Remove duplicates and get top chunks
+        # Remove duplicates and get top 10 chunks
         unique_chunks = []
         seen_chunks = set()
         for chunk in maintenance_chunks:
@@ -88,9 +71,9 @@ async def generate_maintenance_schedule(pdf_name: str = Path(..., description="N
                 unique_chunks.append(chunk)
                 seen_chunks.add(chunk_id)
         
-        # Sort by relevance (lower distance = higher relevance) and take top 9
+        # Sort by relevance (lower distance = higher relevance) and take top 10
         unique_chunks.sort(key=lambda x: x.get("distance", 1.0))
-        top_maintenance_chunks = unique_chunks[:9]  # Take top 9 chunks
+        top_maintenance_chunks = unique_chunks[:10]  # Take top 10 chunks
         
         logger.info(f"Found {len(top_maintenance_chunks)} unique maintenance-relevant chunks out of {len(maintenance_chunks)} total chunks")
         
@@ -99,7 +82,7 @@ async def generate_maintenance_schedule(pdf_name: str = Path(..., description="N
             # Fallback to general chunks if no maintenance-specific content found
             top_maintenance_chunks = await vector_db.get_all_chunks(
                 collection_name=collection_name,
-                limit=9
+                limit=10
             )
         
         if not top_maintenance_chunks:
