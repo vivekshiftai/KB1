@@ -11,6 +11,8 @@ import json
 import time
 import subprocess
 import logging
+import asyncio
+import threading
 from pathlib import Path
 from typing import List, Dict, Any
 from huggingface_hub import snapshot_download
@@ -24,6 +26,16 @@ class PDFProcessor:
     def __init__(self):
         self.models_dir = settings.models_dir
         self.chunker = MarkdownChunker()
+        # Thread-safe processing locks
+        self._processing_locks = {}  # Per-file processing locks
+        self._global_lock = threading.Lock()
+    
+    def _get_processing_lock(self, file_path: str) -> threading.Lock:
+        """Get or create a lock for a specific file processing"""
+        with self._global_lock:
+            if file_path not in self._processing_locks:
+                self._processing_locks[file_path] = threading.Lock()
+            return self._processing_locks[file_path]
         
     async def download_models_with_retry(self, retries: int = 3) -> str:
         """Download PDF-Extract-Kit models with retry logic"""
@@ -44,7 +56,7 @@ class PDFProcessor:
                 if attempt == retries - 1:
                     logger.error("All download attempts failed")
                     raise e
-                time.sleep(2 ** attempt)  # Exponential backoff
+                await asyncio.sleep(2 ** attempt)  # Exponential backoff
         
         return self.models_dir
     
@@ -129,12 +141,10 @@ class PDFProcessor:
                         effective_cmd = [stdbuf_path, "-oL", "-eL", *effective_cmd]
 
                     logger.info("Starting MinerU process with live output (unbuffered)...")
-                    process = subprocess.Popen(
-                        effective_cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                        bufsize=1,
+                    process = await asyncio.create_subprocess_exec(
+                        *effective_cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
                         universal_newlines=True,
                         env=env
                     )
@@ -143,31 +153,38 @@ class PDFProcessor:
                     stdout_lines = []
                     buffer = ""
                     while True:
-                        ch = process.stdout.read(1)
-                        if ch == "" and process.poll() is not None:
-                            if buffer:
-                                line = buffer.rstrip()
-                                logger.info(f"MinerU: {line}")
-                                stdout_lines.append(line)
-                            break
-                        if not ch:
-                            continue
-                        if ch == "\r":
-                            if buffer:
+                        try:
+                            # Read with timeout to avoid blocking
+                            ch = await asyncio.wait_for(process.stdout.read(1), timeout=1.0)
+                            if ch == "" and process.returncode is not None:
+                                if buffer:
+                                    line = buffer.rstrip()
+                                    logger.info(f"MinerU: {line}")
+                                    stdout_lines.append(line)
+                                break
+                            if not ch:
+                                continue
+                            if ch == "\r":
+                                if buffer:
+                                    line = buffer.rstrip()
+                                    logger.info(f"MinerU: {line}")
+                                    stdout_lines.append(line)
+                                    buffer = ""
+                                continue
+                            if ch == "\n":
                                 line = buffer.rstrip()
                                 logger.info(f"MinerU: {line}")
                                 stdout_lines.append(line)
                                 buffer = ""
+                            else:
+                                buffer += ch
+                        except asyncio.TimeoutError:
+                            # Check if process is still running
+                            if process.returncode is not None:
+                                break
                             continue
-                        if ch == "\n":
-                            line = buffer.rstrip()
-                            logger.info(f"MinerU: {line}")
-                            stdout_lines.append(line)
-                            buffer = ""
-                        else:
-                            buffer += ch
 
-                    process.wait()
+                    await process.wait()
 
                     result = type('Result', (), {
                         'returncode': process.returncode,
@@ -218,7 +235,7 @@ class PDFProcessor:
             output_dir = await self.process_pdf_with_mineru(pdf_path, output_base)
             
             # Wait for processing to complete and files to be written
-            time.sleep(2)
+            await asyncio.sleep(2)
             
             # Check if output files exist
             output_path = Path(output_dir)

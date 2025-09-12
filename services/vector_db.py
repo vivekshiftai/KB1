@@ -8,6 +8,8 @@ Version: 0.1
 import os
 import json
 import logging
+import threading
+import asyncio
 from typing import List, Dict, Any, Optional
 import chromadb
 from chromadb.config import Settings as ChromaSettings
@@ -19,15 +21,20 @@ from utils.helpers import sanitize_filename
 
 logger = logging.getLogger(__name__)
 
+# Thread-safe singleton pattern for embedding model
 _EMBEDDING_MODEL_SINGLETON: Optional[SentenceTransformer] = None
+_EMBEDDING_MODEL_LOCK = threading.Lock()
 
 
 def _get_embedding_model(model_name: str) -> SentenceTransformer:
     global _EMBEDDING_MODEL_SINGLETON
     if _EMBEDDING_MODEL_SINGLETON is None:
-        # Force CPU usage for sentence transformers
-        _EMBEDDING_MODEL_SINGLETON = SentenceTransformer(model_name, device='cpu')
-        logger.info(f"Initialized SentenceTransformer model '{model_name}' on CPU")
+        with _EMBEDDING_MODEL_LOCK:
+            # Double-check locking pattern
+            if _EMBEDDING_MODEL_SINGLETON is None:
+                # Force CPU usage for sentence transformers
+                _EMBEDDING_MODEL_SINGLETON = SentenceTransformer(model_name, device='cpu')
+                logger.info(f"Initialized SentenceTransformer model '{model_name}' on CPU")
     return _EMBEDDING_MODEL_SINGLETON
 
 
@@ -36,6 +43,16 @@ class VectorDatabase:
         self.db_type = settings.vector_db_type
         self.embedding_model = _get_embedding_model(settings.embedding_model)
         self.client = self._initialize_client()
+        # Thread-safe locks for concurrent operations
+        self._collection_locks = {}  # Per-collection locks
+        self._global_lock = threading.Lock()  # For collection management
+    
+    def _get_collection_lock(self, collection_name: str) -> threading.Lock:
+        """Get or create a lock for a specific collection"""
+        with self._global_lock:
+            if collection_name not in self._collection_locks:
+                self._collection_locks[collection_name] = threading.Lock()
+            return self._collection_locks[collection_name]
     
     def _initialize_client(self):
         """Initialize vector database client"""
@@ -575,12 +592,14 @@ class VectorDatabase:
             raise e
     
     def collection_exists(self, collection_name: str) -> bool:
-        """Check if collection exists"""
-        try:
-            self.client.get_collection(collection_name)
-            return True
-        except Exception:
-            return False
+        """Check if collection exists (thread-safe)"""
+        collection_lock = self._get_collection_lock(collection_name)
+        with collection_lock:
+            try:
+                self.client.get_collection(collection_name)
+                return True
+            except Exception:
+                return False
     
     def get_collection_type(self, collection_name: str) -> str:
         """Get the type of collection (document or image)"""

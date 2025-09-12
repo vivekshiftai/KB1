@@ -8,6 +8,8 @@ Version: 0.2 - Cleaned up for LangGraph integration
 import json
 import logging
 import tiktoken
+import threading
+import asyncio
 from typing import List, Dict, Any, Optional
 from azure.ai.inference import ChatCompletionsClient
 from azure.ai.inference.models import SystemMessage, UserMessage
@@ -20,8 +22,31 @@ class LLMService:
     def __init__(self):
         # Azure AI Configuration
         self.endpoint = "https://chgai.services.ai.azure.com/models"
-        self.model_name = "Llama-4-Maverick-17B-128E-Instruct-FP8"
         self.api_version = "2024-05-01-preview"
+        
+        # Model configurations for different use cases
+        self.models = {
+            "maintenance": {
+                "name": settings.maintenance_model_name,
+                "endpoint": settings.maintenance_model_endpoint or self.endpoint
+            },
+            "rules": {
+                "name": settings.rules_model_name,
+                "endpoint": settings.rules_model_endpoint or self.endpoint
+            },
+            "safety": {
+                "name": settings.safety_model_name,
+                "endpoint": settings.safety_model_endpoint or self.endpoint
+            },
+            "query": {
+                "name": settings.query_model_name,
+                "endpoint": settings.query_model_endpoint or self.endpoint
+            },
+            "analysis": {
+                "name": settings.analysis_model_name,
+                "endpoint": settings.analysis_model_endpoint or self.endpoint
+            }
+        }
         
         # Validate Azure AI key
         if not settings.azure_openai_key:
@@ -36,6 +61,7 @@ class LLMService:
                 api_version=self.api_version
             )
             logger.info("Azure AI client initialized successfully")
+            logger.info(f"Available models: {list(self.models.keys())}")
         except Exception as e:
             logger.error(f"Failed to initialize Azure AI client: {str(e)}")
             raise e
@@ -52,6 +78,29 @@ class LLMService:
             self.encoding = tiktoken.get_encoding("cl100k_base")
         
         logger.info(f"LLM Service initialized - max_tokens: {self.max_tokens}")
+        
+        # Thread-safe locks for concurrent operations
+        self._request_locks = {}  # Per-model request locks
+        self._global_lock = threading.Lock()
+        # Semaphore to limit concurrent API requests (prevent rate limiting)
+        self._api_semaphore = asyncio.Semaphore(5)  # Max 5 concurrent requests
+    
+    def _get_request_lock(self, model_name: str) -> threading.Lock:
+        """Get or create a lock for a specific model to prevent rate limiting"""
+        with self._global_lock:
+            if model_name not in self._request_locks:
+                self._request_locks[model_name] = threading.Lock()
+            return self._request_locks[model_name]
+    
+    def _get_model_config(self, use_case: str) -> dict:
+        """Get model configuration for specific use case"""
+        if use_case not in self.models:
+            logger.warning(f"Unknown use case '{use_case}', using default query model")
+            use_case = "query"
+        
+        model_config = self.models[use_case]
+        logger.info(f"Using {use_case} model: {model_config['name']} at {model_config['endpoint']}")
+        return model_config
     
     def count_tokens(self, text: str) -> int:
         """Count tokens in text"""
@@ -195,21 +244,26 @@ Provide a comprehensive answer based on the documentation. In the "chunks_used" 
 Return ONLY the JSON object, no additional text."""
         
         try:
-            response = self.client.complete(
-                messages=[
-                    SystemMessage(content=system_prompt),
-                    UserMessage(content=user_prompt)
-                ],
-                max_tokens=self.max_completion_tokens,
-                temperature=0.1,
-                top_p=0.1,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
-                model=self.model_name
-            )
+            # Get query model configuration
+            model_config = self._get_model_config("query")
+            
+            # Use semaphore to limit concurrent requests
+            async with self._api_semaphore:
+                response = self.client.complete(
+                    messages=[
+                        SystemMessage(content=system_prompt),
+                        UserMessage(content=user_prompt)
+                    ],
+                    max_tokens=self.max_completion_tokens,
+                    temperature=0.1,
+                    top_p=0.1,
+                    presence_penalty=0.0,
+                    frequency_penalty=0.0,
+                    model=model_config["name"]
+                )
             
             raw_response = response.choices[0].message.content.strip()
-            logger.info(f"Raw LLM response: {raw_response[:200]}...")
+            logger.info(f"Raw LLM response using {model_config['name']}: {raw_response[:200]}...")
             
             # Try to parse JSON response
             try:
@@ -261,21 +315,26 @@ CRITICAL: You must respond with ONLY a valid JSON object with this exact structu
 
 Do not include any text before or after the JSON object."""
             
-            response = self.client.complete(
-                messages=[
-                    SystemMessage(content=system_prompt),
-                    UserMessage(content=prompt)
-                ],
-                max_tokens=1000,
-                temperature=0.1,
-                top_p=0.1,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
-                model=self.model_name
-            )
+            # Get analysis model configuration
+            model_config = self._get_model_config("analysis")
+            
+            # Use semaphore to limit concurrent requests
+            async with self._api_semaphore:
+                response = self.client.complete(
+                    messages=[
+                        SystemMessage(content=system_prompt),
+                        UserMessage(content=prompt)
+                    ],
+                    max_tokens=1000,
+                    temperature=0.1,
+                    top_p=0.1,
+                    presence_penalty=0.0,
+                    frequency_penalty=0.0,
+                    model=model_config["name"]
+                )
             
             raw_response = response.choices[0].message.content.strip()
-            logger.info(f"Raw analysis response: {raw_response[:200]}...")
+            logger.info(f"Raw analysis response using {model_config['name']}: {raw_response[:200]}...")
             
             # Try to parse JSON response
             try:
@@ -509,21 +568,26 @@ VALID SENSOR METRICS TO USE:
 Return ONLY the JSON object with the rules array."""
         
         try:
-            response = self.client.complete(
-                messages=[
-                    SystemMessage(content=system_prompt),
-                    UserMessage(content=user_prompt)
-                ],
-                max_tokens=self.max_completion_tokens,
-                temperature=0.2,
-                top_p=0.1,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
-                model=self.model_name
-            )
+            # Get rules model configuration
+            model_config = self._get_model_config("rules")
+            
+            # Use semaphore to limit concurrent requests
+            async with self._api_semaphore:
+                response = self.client.complete(
+                    messages=[
+                        SystemMessage(content=system_prompt),
+                        UserMessage(content=user_prompt)
+                    ],
+                    max_tokens=self.max_completion_tokens,
+                    temperature=0.2,
+                    top_p=0.1,
+                    presence_penalty=0.0,
+                    frequency_penalty=0.0,
+                    model=model_config["name"]
+                )
             
             raw_response = response.choices[0].message.content.strip()
-            logger.info(f"Raw LLM response for rules: {raw_response[:200]}...")
+            logger.info(f"Raw LLM response for rules using {model_config['name']}: {raw_response[:200]}...")
             
             # Parse JSON response
             import json
@@ -663,21 +727,26 @@ IMPORTANT: Use specific numerical values from the documentation for:
 Return ONLY the JSON object with safety_precautions and safety_information arrays."""
         
         try:
-            response = self.client.complete(
-                messages=[
-                    SystemMessage(content=system_prompt),
-                    UserMessage(content=user_prompt)
-                ],
-                max_tokens=self.max_completion_tokens,
-                temperature=0.2,
-                top_p=0.1,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
-                model=self.model_name
-            )
+            # Get safety model configuration
+            model_config = self._get_model_config("safety")
+            
+            # Use semaphore to limit concurrent requests
+            async with self._api_semaphore:
+                response = self.client.complete(
+                    messages=[
+                        SystemMessage(content=system_prompt),
+                        UserMessage(content=user_prompt)
+                    ],
+                    max_tokens=self.max_completion_tokens,
+                    temperature=0.2,
+                    top_p=0.1,
+                    presence_penalty=0.0,
+                    frequency_penalty=0.0,
+                    model=model_config["name"]
+                )
             
             raw_response = response.choices[0].message.content.strip()
-            logger.info(f"Raw LLM response for safety: {raw_response[:200]}...")
+            logger.info(f"Raw LLM response for safety using {model_config['name']}: {raw_response[:200]}...")
             
             # Parse JSON response
             import json
@@ -793,21 +862,26 @@ Pay special attention to any tables labeled as "maintenance list", "maintenance 
 Return ONLY the JSON object with the maintenance_tasks array."""
         
         try:
-            response = self.client.complete(
-                messages=[
-                    SystemMessage(content=system_prompt),
-                    UserMessage(content=user_prompt)
-                ],
-                max_tokens=self.max_completion_tokens,
-                temperature=0.2,
-                top_p=0.1,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
-                model=self.model_name
-            )
+            # Get maintenance model configuration
+            model_config = self._get_model_config("maintenance")
+            
+            # Use semaphore to limit concurrent requests
+            async with self._api_semaphore:
+                response = self.client.complete(
+                    messages=[
+                        SystemMessage(content=system_prompt),
+                        UserMessage(content=user_prompt)
+                    ],
+                    max_tokens=self.max_completion_tokens,
+                    temperature=0.2,
+                    top_p=0.1,
+                    presence_penalty=0.0,
+                    frequency_penalty=0.0,
+                    model=model_config["name"]
+                )
             
             raw_response = response.choices[0].message.content.strip()
-            logger.info(f"Raw LLM response for maintenance: {raw_response[:200]}...")
+            logger.info(f"Raw LLM response for maintenance using {model_config['name']}: {raw_response[:200]}...")
             
             # Parse JSON response
             import json
