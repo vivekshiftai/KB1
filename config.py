@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     output_dir: str = "./processed"
     
     # Application Settings
-    log_level: str = "DEBUG"
+    log_level: str = "INFO"
     max_file_size: int = 50 * 1024 * 1024  # 50MB
     max_chunks_per_batch: int = 25
     embedding_model: str = "all-MiniLM-L6-v2"
