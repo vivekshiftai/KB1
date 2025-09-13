@@ -399,11 +399,7 @@ EXAMPLE OF CORRECT RESPONSE:
 ❌ WRONG: "1. Ensure the machine is ready for operation as described in chapter 4.1"
 ✅ CORRECT: "1. Check all safety systems are operational. 2. Verify power supply connections. 3. Inspect machine components for damage."
 
-Provide a comprehensive answer based ONLY on the documentation provided above. 
-
-CRITICAL: In the "chunks_used" array, list the EXACT section headings from the available headings that you referenced in your answer. This is essential for collecting the correct images and tables from those chunks.
-
-Available Section Headings: {chunk_headings}
+Provide a comprehensive answer based ONLY on the documentation provided above. In the "chunks_used" array, list the exact section headings from the available headings that you referenced in your answer.
 
 Return ONLY the JSON object, no additional text."""
         
