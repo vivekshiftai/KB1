@@ -7,6 +7,7 @@ Version: 0.2 - Cleaned up for LangGraph integration
 
 import json
 import logging
+import re
 import tiktoken
 import threading
 import asyncio
@@ -213,7 +214,6 @@ Return ONLY the JSON object, no additional text."""
             
             # Parse JSON response
             try:
-                import json
                 json_start = raw_response.find('{')
                 json_end = raw_response.rfind('}') + 1
                 
@@ -440,6 +440,9 @@ Return ONLY the JSON object, no additional text."""
                         # Post-process to remove any remaining generic references
                         response_text = parsed_response["response"]
                         
+                        # Ensure re module is available
+                        import re
+                        
                         # Check for and fix generic references
                         generic_patterns = [
                             r"as described in chapter [\d\.]+[^.]*",
@@ -521,7 +524,6 @@ Do not include any text before or after the JSON object."""
             
             # Try to parse JSON response
             try:
-                import json
                 # Clean the response to extract JSON
                 json_start = raw_response.find('{')
                 json_end = raw_response.rfind('}') + 1
@@ -773,9 +775,10 @@ Return ONLY the JSON object with the rules array."""
             logger.info(f"Raw LLM response for rules using {model_config['name']}: {raw_response[:200]}...")
             
             # Parse JSON response
-            import json
-            import re
             try:
+                # Ensure re module is available
+                import re
+                
                 # Remove markdown code blocks if present
                 cleaned_response = raw_response
                 if "```json" in cleaned_response:
@@ -932,9 +935,10 @@ Return ONLY the JSON object with safety_precautions and safety_information array
             logger.info(f"Raw LLM response for safety using {model_config['name']}: {raw_response[:200]}...")
             
             # Parse JSON response
-            import json
-            import re
             try:
+                # Ensure re module is available
+                import re
+                
                 # Remove markdown code blocks if present
                 cleaned_response = raw_response
                 if "```json" in cleaned_response:
@@ -1272,9 +1276,10 @@ Return ONLY the JSON object with the maintenance_tasks array."""
             logger.info(f"Raw LLM response for maintenance using {model_config['name']}: {raw_response[:200]}...")
             
             # Parse JSON response
-            import json
-            import re
             try:
+                # Ensure re module is available
+                import re
+                
                 # Remove markdown code blocks if present
                 cleaned_response = raw_response
                 if "```json" in cleaned_response:
