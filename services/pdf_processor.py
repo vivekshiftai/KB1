@@ -145,37 +145,37 @@ class PDFProcessor:
                         *effective_cmd,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.STDOUT,
-                        universal_newlines=True,
+                        universal_newlines=False,
                         env=env
                     )
 
                     # Stream output in real-time without throttling
                     stdout_lines = []
-                    buffer = ""
+                    buffer = b""
                     while True:
                         try:
                             # Read with timeout to avoid blocking
                             ch = await asyncio.wait_for(process.stdout.read(1), timeout=1.0)
-                            if ch == "" and process.returncode is not None:
+                            if ch == b"" and process.returncode is not None:
                                 if buffer:
-                                    line = buffer.rstrip()
+                                    line = buffer.decode('utf-8', errors='ignore').rstrip()
                                     logger.info(f"MinerU: {line}")
                                     stdout_lines.append(line)
                                 break
                             if not ch:
                                 continue
-                            if ch == "\r":
+                            if ch == b"\r":
                                 if buffer:
-                                    line = buffer.rstrip()
+                                    line = buffer.decode('utf-8', errors='ignore').rstrip()
                                     logger.info(f"MinerU: {line}")
                                     stdout_lines.append(line)
-                                    buffer = ""
+                                    buffer = b""
                                 continue
-                            if ch == "\n":
-                                line = buffer.rstrip()
+                            if ch == b"\n":
+                                line = buffer.decode('utf-8', errors='ignore').rstrip()
                                 logger.info(f"MinerU: {line}")
                                 stdout_lines.append(line)
-                                buffer = ""
+                                buffer = b""
                             else:
                                 buffer += ch
                         except asyncio.TimeoutError:
