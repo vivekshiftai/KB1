@@ -484,8 +484,7 @@ class VectorDatabase:
                     logger.warning(f"Retrieved image chunk instead of document chunk: {metadata}")
                     continue
                 
-                if len(doc_content) < 100:
-                    logger.warning(f"Retrieved chunk {i} has very short content: '{doc_content}'")
+                # Include all chunks - let the LLM decide relevance based on query
             
             logger.info(f"Total images in results: {total_images}")
             logger.info(f"Total tables in results: {total_tables}")

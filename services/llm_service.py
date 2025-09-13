@@ -219,6 +219,14 @@ Return ONLY the JSON object, no additional text."""
                 
                 if json_start != -1 and json_end > json_start:
                     json_str = raw_response[json_start:json_end]
+                    
+                    # Clean control characters that can cause JSON parsing errors
+                    import re
+                    # Remove or replace problematic control characters
+                    json_str = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', json_str)
+                    # Fix common JSON issues
+                    json_str = json_str.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+                    
                     assessment = json.loads(json_str)
                     
                     # Validate required fields
@@ -283,9 +291,12 @@ Return ONLY the JSON object, no additional text."""
                 # Filter content based on table needs
                 content = self._filter_chunk_content(chunk, needs_tables)
                 
-                if content:
+                # Include all chunks that have content - let the LLM decide relevance
+                if content and content.strip():
                     context_parts.append(f"**{heading}**\n{content}")
                     chunk_headings.append(heading)
+                else:
+                    logger.warning(f"Skipping chunk with no content")
             except Exception as e:
                 logger.warning(f"Error processing chunk: {str(e)}")
                 continue
@@ -433,6 +444,14 @@ Return ONLY the JSON object, no additional text."""
                 
                 if json_start != -1 and json_end > json_start:
                     json_str = raw_response[json_start:json_end]
+                    
+                    # Clean control characters that can cause JSON parsing errors
+                    import re
+                    # Remove or replace problematic control characters
+                    json_str = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', json_str)
+                    # Fix common JSON issues
+                    json_str = json_str.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+                    
                     parsed_response = json.loads(json_str)
                     
                     # Validate required fields
@@ -474,7 +493,24 @@ Return ONLY the JSON object, no additional text."""
                     
             except (json.JSONDecodeError, ValueError) as e:
                 logger.warning(f"Failed to parse JSON response: {str(e)}, using fallback extraction")
-                # Fallback: extract response and chunks using old method
+                logger.warning(f"Problematic JSON string: {json_str[:200]}...")
+                
+                # Try one more time with more aggressive cleaning
+                try:
+                    # More aggressive cleaning for stubborn control characters
+                    json_str_clean = re.sub(r'[^\x20-\x7E\n\r\t]', '', json_str)
+                    json_str_clean = json_str_clean.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+                    # Remove extra spaces
+                    json_str_clean = re.sub(r'\s+', ' ', json_str_clean)
+                    
+                    parsed_response = json.loads(json_str_clean)
+                    if "response" in parsed_response and "chunks_used" in parsed_response:
+                        logger.info("Successfully parsed JSON after aggressive cleaning")
+                        return parsed_response
+                except Exception as e2:
+                    logger.warning(f"Aggressive cleaning also failed: {str(e2)}")
+                
+                # Final fallback: extract response and chunks using old method
                 chunks_used = self._extract_referenced_sections(raw_response, chunks)
                 return {
                     "response": raw_response,
@@ -530,6 +566,14 @@ Do not include any text before or after the JSON object."""
                 
                 if json_start != -1 and json_end > json_start:
                     json_str = raw_response[json_start:json_end]
+                    
+                    # Clean control characters that can cause JSON parsing errors
+                    import re
+                    # Remove or replace problematic control characters
+                    json_str = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', json_str)
+                    # Fix common JSON issues
+                    json_str = json_str.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+                    
                     parsed_response = json.loads(json_str)
                     
                     # Validate required fields
@@ -598,9 +642,16 @@ Do not include any text before or after the JSON object."""
                             # Fallback format
                             heading = chunk.get("heading", "")
                         
-                        if heading and heading.lower() in answer.lower():
-                            referenced_sections.append(heading)
-                            logger.info(f"Matched heading in text: {heading}")
+                        # More flexible matching - check if heading or parts of it appear in answer
+                        if heading:
+                            heading_words = heading.lower().split()
+                            answer_lower = answer.lower()
+                            
+                            # Check if any significant words from heading appear in answer
+                            matches = sum(1 for word in heading_words if len(word) > 3 and word in answer_lower)
+                            if matches >= min(2, len(heading_words)):  # At least 2 words or most of heading
+                                referenced_sections.append(heading)
+                                logger.info(f"Matched heading in text: {heading} (matches: {matches})")
                     except Exception as e:
                         logger.warning(f"Error extracting heading from chunk: {str(e)}")
                         continue

@@ -21,10 +21,23 @@ from endpoints import upload, query, pdfs, rules, maintenance, safety, images
 # Setup logging
 logger = setup_logging(settings.log_level)
 
+# Test logging immediately
+logger.info("=== LOGGING TEST - Application starting ===")
+logger.info(f"Log level configured: {settings.log_level}")
+
+# Configure service loggers explicitly
+import logging
+logging.getLogger("services.llm_service").setLevel(logging.INFO)
+logging.getLogger("services.vector_db").setLevel(logging.INFO)
+logging.getLogger("services.pdf_processor").setLevel(logging.INFO)
+logging.getLogger("services.chunking").setLevel(logging.INFO)
+logging.getLogger("services.langgraph_query_processor").setLevel(logging.INFO)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan management"""
     logger.info("Starting PDF Intelligence Platform...")
+    print("🚀 PDF Intelligence Platform starting...")  # Also print to console
     
     # Force CPU mode for all operations
     optimize_for_cpu()
@@ -34,6 +47,12 @@ async def lifespan(app: FastAPI):
     logger.info(f"Upload Directory: {settings.upload_dir}")
     logger.info(f"Output Directory: {settings.output_dir}")
     logger.info("✅ CPU mode enforced - All operations will use CPU")
+    
+    # Test logging from services
+    from services.llm_service import logger as llm_logger
+    from services.vector_db import logger as vector_logger
+    llm_logger.info("LLM Service logger is working")
+    vector_logger.info("Vector DB Service logger is working")
     
     yield
     
@@ -99,6 +118,26 @@ async def health_check():
             "maintenance": "healthy",
             "safety": "healthy"
         }
+    }
+
+@app.get("/test-logs")
+async def test_logs():
+    """Test endpoint to verify logging is working"""
+    logger.info("Test log message from main logger")
+    logger.warning("Test warning message from main logger")
+    logger.error("Test error message from main logger")
+    
+    # Test service loggers
+    from services.llm_service import logger as llm_logger
+    from services.vector_db import logger as vector_logger
+    
+    llm_logger.info("Test log message from LLM service")
+    vector_logger.info("Test log message from Vector DB service")
+    
+    return {
+        "message": "Test log messages sent - check console and app.log file",
+        "log_level": settings.log_level,
+        "log_file": "app.log"
     }
 
 @app.exception_handler(Exception)

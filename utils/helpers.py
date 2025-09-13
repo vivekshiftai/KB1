@@ -15,15 +15,56 @@ from functools import wraps
 
 def setup_logging(level: str = "INFO"):
     """Setup logging configuration"""
-    logging.basicConfig(
-        level=getattr(logging, level.upper()),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.FileHandler("app.log"),
-            logging.StreamHandler()
-        ]
+    # Clear any existing handlers
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+    
+    # Create formatter
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
     )
-    return logging.getLogger(__name__)
+    
+    # Create handlers
+    file_handler = logging.FileHandler("app.log", mode='a', encoding='utf-8')
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.INFO)
+    
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    console_handler.setLevel(logging.INFO)
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+    
+    # Configure specific service loggers
+    service_loggers = [
+        'services.llm_service',
+        'services.vector_db', 
+        'services.pdf_processor',
+        'services.chunking',
+        'services.langgraph_query_processor'
+    ]
+    
+    for logger_name in service_loggers:
+        service_logger = logging.getLogger(logger_name)
+        service_logger.setLevel(logging.INFO)
+        service_logger.propagate = True  # Ensure messages propagate to root logger
+    
+    # Test logging immediately
+    test_logger = logging.getLogger(__name__)
+    test_logger.info("=== LOGGING SYSTEM INITIALIZED ===")
+    test_logger.info(f"Log file: app.log")
+    test_logger.info(f"Log level: INFO")
+    
+    # Force flush to ensure logs are written immediately
+    for handler in root_logger.handlers:
+        handler.flush()
+    
+    return test_logger
 
 def sanitize_filename(filename: str) -> str:
     """Sanitize filename for use as collection name"""
