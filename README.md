@@ -86,7 +86,7 @@ FORMULA_ENABLE=true
 TABLE_ENABLE=true
 
 # Logging
-LOG_LEVEL=INFO
+LOG_LEVEL=DEBUG
 ```
 
 ## 🚀 Quick Start

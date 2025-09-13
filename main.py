@@ -120,5 +120,18 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000,
         reload=True,
+        reload_dirs=["."],  # Only watch current directory
+        reload_excludes=[
+            "vector_db/**",  # Exclude vector database files
+            "processed/**",  # Exclude processed PDF files
+            "uploads/**",    # Exclude uploaded files
+            "pdf_extract_kit_models/**",  # Exclude model files
+            "*.log",         # Exclude log files
+            "*.tmp",         # Exclude temporary files
+            "__pycache__/**", # Exclude Python cache
+            "*.pyc",         # Exclude compiled Python files
+            ".git/**",       # Exclude git files
+            "node_modules/**" # Exclude node modules if any
+        ],
         log_level=settings.log_level.lower()
     )
