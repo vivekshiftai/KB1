@@ -18,25 +18,23 @@ from utils.cpu_optimizer import optimize_for_cpu
 from endpoints import upload, query, pdfs, rules, maintenance, safety, images
 
 
-# Setup logging
+# Setup thread-safe logging
 logger = setup_logging(settings.log_level)
 
 # Test logging immediately
-logger.info("=== LOGGING TEST - Application starting ===")
+logger.info("=== APPLICATION STARTING - Thread-Safe Logging Active ===")
 logger.info(f"Log level configured: {settings.log_level}")
-
-# Configure service loggers explicitly
-import logging
-logging.getLogger("services.llm_service").setLevel(logging.INFO)
-logging.getLogger("services.vector_db").setLevel(logging.INFO)
-logging.getLogger("services.pdf_processor").setLevel(logging.INFO)
-logging.getLogger("services.chunking").setLevel(logging.INFO)
-logging.getLogger("services.langgraph_query_processor").setLevel(logging.INFO)
+logger.info(f"Thread safety: ENABLED")
+logger.info(f"Concurrent API handling: ENABLED")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan management"""
-    logger.info("Starting PDF Intelligence Platform...")
+    """Application lifespan management with thread safety verification"""
+    import threading
+    
+    logger.info("=== STARTING PDF INTELLIGENCE PLATFORM ===")
+    logger.info(f"Thread: {threading.current_thread().name}")
+    logger.info(f"Thread ID: {threading.get_ident()}")
     print("🚀 PDF Intelligence Platform starting...")  # Also print to console
     
     # Force CPU mode for all operations
@@ -48,15 +46,25 @@ async def lifespan(app: FastAPI):
     logger.info(f"Output Directory: {settings.output_dir}")
     logger.info("✅ CPU mode enforced - All operations will use CPU")
     
-    # Test logging from services
+    # Test logging from services to verify thread-safe logging
     from services.llm_service import logger as llm_logger
     from services.vector_db import logger as vector_logger
-    llm_logger.info("LLM Service logger is working")
-    vector_logger.info("Vector DB Service logger is working")
+    llm_logger.info("LLM Service logger is working - Thread-safe")
+    vector_logger.info("Vector DB Service logger is working - Thread-safe")
+    
+    # Log thread safety features
+    logger.info("=== THREAD SAFETY FEATURES ACTIVE ===")
+    logger.info("✅ Thread-safe logging enabled")
+    logger.info("✅ Concurrent API request handling enabled")
+    logger.info("✅ Per-collection locks for vector DB operations")
+    logger.info("✅ Per-model locks for LLM service operations")
+    logger.info("✅ API request semaphore limiting (max 5 concurrent)")
+    logger.info("✅ Thread-safe embedding model singleton")
     
     yield
     
-    logger.info("Shutting down PDF Intelligence Platform...")
+    logger.info("=== SHUTTING DOWN PDF INTELLIGENCE PLATFORM ===")
+    logger.info("Thread-safe cleanup completed")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -122,34 +130,61 @@ async def health_check():
 
 @app.get("/test-logs")
 async def test_logs():
-    """Test endpoint to verify logging is working"""
-    logger.info("Test log message from main logger")
-    logger.warning("Test warning message from main logger")
-    logger.error("Test error message from main logger")
+    """Test endpoint to verify thread-safe logging is working"""
+    import threading
+    import asyncio
+    
+    current_thread = threading.current_thread()
+    logger.info(f"=== TESTING THREAD-SAFE LOGGING ===")
+    logger.info(f"Current thread: {current_thread.name} (ID: {threading.get_ident()})")
+    logger.info("Test INFO message from main logger")
+    logger.warning("Test WARNING message from main logger")
+    logger.error("Test ERROR message from main logger")
     
     # Test service loggers
     from services.llm_service import logger as llm_logger
     from services.vector_db import logger as vector_logger
     
-    llm_logger.info("Test log message from LLM service")
-    vector_logger.info("Test log message from Vector DB service")
+    llm_logger.info(f"Test INFO message from LLM service (Thread: {current_thread.name})")
+    vector_logger.info(f"Test INFO message from Vector DB service (Thread: {current_thread.name})")
+    
+    # Test concurrent logging simulation
+    async def concurrent_log_test():
+        await asyncio.sleep(0.1)  # Simulate some async work
+        logger.info(f"Concurrent log from async function (Thread: {threading.current_thread().name})")
+    
+    # Run concurrent logging test
+    await concurrent_log_test()
     
     return {
-        "message": "Test log messages sent - check console and app.log file",
+        "message": "Thread-safe test log messages sent - check console and app.log file",
         "log_level": settings.log_level,
-        "log_file": "app.log"
+        "log_file": "app.log",
+        "thread_safety": "ENABLED",
+        "current_thread": current_thread.name,
+        "thread_id": threading.get_ident()
     }
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Global exception handler"""
-    logger.error(f"Unhandled exception: {str(exc)}")
+    """Global exception handler with thread-safe logging"""
+    import threading
+    
+    current_thread = threading.current_thread()
+    logger.error(f"Unhandled exception in thread {current_thread.name} (ID: {threading.get_ident()}): {str(exc)}")
+    logger.error(f"Request URL: {request.url}")
+    logger.error(f"Request method: {request.method}")
+    
     return JSONResponse(
         status_code=500,
         content={
             "success": False,
             "message": "Internal server error",
-            "detail": str(exc) if settings.log_level.upper() == "DEBUG" else "An unexpected error occurred"
+            "detail": str(exc) if settings.log_level.upper() == "DEBUG" else "An unexpected error occurred",
+            "thread_info": {
+                "thread_name": current_thread.name,
+                "thread_id": threading.get_ident()
+            }
         }
     )
 

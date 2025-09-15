@@ -46,12 +46,19 @@ class VectorDatabase:
         # Thread-safe locks for concurrent operations
         self._collection_locks = {}  # Per-collection locks
         self._global_lock = threading.Lock()  # For collection management
+        
+        logger.info("Vector Database thread safety initialized:")
+        logger.info(f"  - Per-collection locks: ENABLED")
+        logger.info(f"  - Global lock for collection management: ENABLED")
+        logger.info(f"  - Thread-safe embedding model singleton: ENABLED")
+        logger.info(f"  - Thread-safe ChromaDB client: ENABLED")
     
     def _get_collection_lock(self, collection_name: str) -> threading.Lock:
         """Get or create a lock for a specific collection"""
         with self._global_lock:
             if collection_name not in self._collection_locks:
                 self._collection_locks[collection_name] = threading.Lock()
+                logger.info(f"Created new collection lock for: {collection_name} (Thread: {threading.current_thread().name})")
             return self._collection_locks[collection_name]
     
     def _initialize_client(self):
@@ -384,11 +391,13 @@ class VectorDatabase:
     
     async def query_chunks(self, collection_name: str, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """Query chunks from vector database"""
-        logger.info(f"Querying collection: {collection_name} with query: {query[:100]}...")
+        logger.info(f"Querying collection: {collection_name} with query: {query[:100]}... (Thread: {threading.current_thread().name})")
         
         try:
-            # Get collection
+            # Get collection with thread safety logging
+            logger.info(f"Acquiring collection: {collection_name}")
             collection = self.client.get_collection(name=collection_name)
+            logger.info(f"Collection acquired successfully: {collection_name}")
             
             # Check if this is an images collection (ends with _images)
             if collection_name.endswith("_images"):

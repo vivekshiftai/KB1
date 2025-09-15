@@ -19,9 +19,9 @@ from models.schemas import QueryRequest, QueryResponse, ImageData
 MAX_ITERATIONS = 3
 BASE_CHUNK_SIZE = 2
 CHUNK_SIZE_INCREMENT = 1
-MIN_CONFIDENCE_SCORE = 0.6
-MIN_RESPONSE_LENGTH = 50
-HUMAN_REVIEW_THRESHOLD = 0.7
+MIN_CONFIDENCE_SCORE = 0.1  # Very lenient for short queries
+MIN_RESPONSE_LENGTH = 1  # Allow any response length, including very short ones
+HUMAN_REVIEW_THRESHOLD = 0.3  # More lenient for short queries
 QUALITY_WEIGHTS = {
     "has_content": 0.3,
     "mentions_query": 0.3,
@@ -152,6 +152,7 @@ class LangGraphQueryProcessor:
         start_time = time.time()
         
         logger.info(f"Starting LangGraph query processing for: {request.query}")
+        logger.info(f"Query length: {len(request.query)} characters - NO LENGTH RESTRICTIONS")
         
         # Initialize state
         initial_state = {
@@ -433,7 +434,7 @@ Please provide a comprehensive answer that addresses all aspects of the original
             # Fallback to original validation
             quality_metrics = {
                 "response_length": len(response),
-                "has_content": len(response.strip()) > 50,
+                "has_content": len(response.strip()) > 0,  # Allow any non-empty response
                 "mentions_original_query": any(word.lower() in response.lower() for word in original_query.split()),
                 "mentions_individual_queries": sum(1 for q in individual_queries if any(word.lower() in response.lower() for word in q.split())),
                 "uses_chunks": len(state["llm_response"].get("chunks_used", [])) > 0,

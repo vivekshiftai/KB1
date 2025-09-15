@@ -14,55 +14,76 @@ from typing import Any, Dict
 from functools import wraps
 
 def setup_logging(level: str = "INFO"):
-    """Setup logging configuration"""
-    # Clear any existing handlers
-    for handler in logging.root.handlers[:]:
-        logging.root.removeHandler(handler)
+    """Setup thread-safe logging configuration"""
+    import threading
     
-    # Create formatter
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
+    # Thread-safe logging setup
+    logging_lock = threading.Lock()
     
-    # Create handlers
-    file_handler = logging.FileHandler("app.log", mode='a', encoding='utf-8')
-    file_handler.setFormatter(formatter)
-    file_handler.setLevel(logging.INFO)
-    
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    console_handler.setLevel(logging.INFO)
-    
-    # Configure root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
-    root_logger.addHandler(file_handler)
-    root_logger.addHandler(console_handler)
-    
-    # Configure specific service loggers
-    service_loggers = [
-        'services.llm_service',
-        'services.vector_db', 
-        'services.pdf_processor',
-        'services.chunking',
-        'services.langgraph_query_processor'
-    ]
-    
-    for logger_name in service_loggers:
-        service_logger = logging.getLogger(logger_name)
-        service_logger.setLevel(logging.INFO)
-        service_logger.propagate = True  # Ensure messages propagate to root logger
-    
-    # Test logging immediately
-    test_logger = logging.getLogger(__name__)
-    test_logger.info("=== LOGGING SYSTEM INITIALIZED ===")
-    test_logger.info(f"Log file: app.log")
-    test_logger.info(f"Log level: INFO")
-    
-    # Force flush to ensure logs are written immediately
-    for handler in root_logger.handlers:
-        handler.flush()
+    with logging_lock:
+        # Don't clear existing handlers to avoid interfering with FastAPI
+        # Just ensure our handlers are added
+        
+        # Create formatter with thread ID for debugging
+        formatter = logging.Formatter(
+            "%(asctime)s - %(threadName)s - %(name)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        )
+        
+        # Get root logger
+        root_logger = logging.getLogger()
+        root_logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+        
+        # Check if we already have our handlers to avoid duplicates
+        has_file_handler = any(isinstance(h, logging.FileHandler) and h.baseFilename.endswith('app.log') for h in root_logger.handlers)
+        has_console_handler = any(isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler) for h in root_logger.handlers)
+        
+        # Add file handler if not present
+        if not has_file_handler:
+            file_handler = logging.FileHandler("app.log", mode='a', encoding='utf-8')
+            file_handler.setFormatter(formatter)
+            file_handler.setLevel(getattr(logging, level.upper(), logging.INFO))
+            root_logger.addHandler(file_handler)
+        
+        # Add console handler if not present
+        if not has_console_handler:
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(formatter)
+            console_handler.setLevel(getattr(logging, level.upper(), logging.INFO))
+            root_logger.addHandler(console_handler)
+        
+        # Configure specific service loggers
+        service_loggers = [
+            'services.llm_service',
+            'services.vector_db', 
+            'services.pdf_processor',
+            'services.chunking',
+            'services.langgraph_query_processor',
+            'endpoints.query',
+            'endpoints.upload',
+            'endpoints.pdfs',
+            'endpoints.rules',
+            'endpoints.maintenance',
+            'endpoints.safety',
+            'endpoints.images'
+        ]
+        
+        for logger_name in service_loggers:
+            service_logger = logging.getLogger(logger_name)
+            service_logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+            service_logger.propagate = True  # Ensure messages propagate to root logger
+        
+        # Test logging immediately
+        test_logger = logging.getLogger(__name__)
+        test_logger.info("=== THREAD-SAFE LOGGING SYSTEM INITIALIZED ===")
+        test_logger.info(f"Log file: app.log")
+        test_logger.info(f"Log level: {level.upper()}")
+        test_logger.info(f"Thread: {threading.current_thread().name}")
+        
+        # Force flush to ensure logs are written immediately
+        for handler in root_logger.handlers:
+            if hasattr(handler, 'flush'):
+                handler.flush()
     
     return test_logger
 

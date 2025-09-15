@@ -85,6 +85,12 @@ class LLMService:
         self._global_lock = threading.Lock()
         # Semaphore to limit concurrent API requests (prevent rate limiting)
         self._api_semaphore = asyncio.Semaphore(5)  # Max 5 concurrent requests
+        
+        logger.info("LLM Service thread safety initialized:")
+        logger.info(f"  - Per-model request locks: ENABLED")
+        logger.info(f"  - Global lock: ENABLED")
+        logger.info(f"  - API semaphore limit: 5 concurrent requests")
+        logger.info(f"  - Thread-safe Azure AI client: ENABLED")
     
     def _get_request_lock(self, model_name: str) -> threading.Lock:
         """Get or create a lock for a specific model to prevent rate limiting"""
@@ -195,7 +201,9 @@ Return ONLY the JSON object, no additional text."""
             model_config = self._get_model_config("analysis")
             
             # Use semaphore to limit concurrent requests
+            logger.info(f"Acquiring API semaphore for assessment request (Thread: {threading.current_thread().name})")
             async with self._api_semaphore:
+                logger.info(f"API semaphore acquired, making assessment request to {model_config['name']}")
                 response = self.client.complete(
                     messages=[
                         SystemMessage(content=assessment_prompt),
@@ -208,6 +216,7 @@ Return ONLY the JSON object, no additional text."""
                     frequency_penalty=0.0,
                     model=model_config["name"]
                 )
+                logger.info(f"Assessment request completed, releasing semaphore")
             
             raw_response = response.choices[0].message.content.strip()
             logger.info(f"Assessment response: {raw_response[:200]}...")
@@ -419,7 +428,9 @@ Return ONLY the JSON object, no additional text."""
             model_config = self._get_model_config("query")
             
             # Use semaphore to limit concurrent requests
+            logger.info(f"Acquiring API semaphore for query request (Thread: {threading.current_thread().name})")
             async with self._api_semaphore:
+                logger.info(f"API semaphore acquired, making query request to {model_config['name']}")
                 response = self.client.complete(
                     messages=[
                         SystemMessage(content=system_prompt),
@@ -432,6 +443,7 @@ Return ONLY the JSON object, no additional text."""
                     frequency_penalty=0.0,
                     model=model_config["name"]
                 )
+                logger.info(f"Query request completed, releasing semaphore")
             
             raw_response = response.choices[0].message.content.strip()
             logger.info(f"Raw LLM response using {model_config['name']}: {raw_response[:200]}...")
@@ -1162,7 +1174,7 @@ Return ONLY the JSON object with safety_precautions and safety_information array
             # Quality metrics
             quality_metrics = {
                 "response_length": len(response_text),
-                "has_content": len(response_text.strip()) > 50,
+                "has_content": len(response_text.strip()) > 0,  # Allow any non-empty response
                 "uses_chunks": len(chunks_used) > 0,
                 "addresses_query": any(word.lower() in response_text.lower() for word in query.split()),
                 "has_specific_details": any(char.isdigit() for char in response_text),  # Has numbers/measurements

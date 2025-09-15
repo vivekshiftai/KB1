@@ -19,11 +19,17 @@ logger = logging.getLogger(__name__)
 
 @router.post("", response_model=QueryResponse)
 async def query_pdf(request: QueryRequest):
-    """Query PDF content with LangGraph workflow and response validation"""
+    """Query PDF content with LangGraph workflow and response validation
+    
+    Note: All query lengths are accepted, including queries with 10 characters or less.
+    No length restrictions or filters are applied.
+    """
     start_time = time.time()
     
     logger.info(f"Processing query for PDF: {request.pdf_name}")
     logger.info(f"Query: {request.query}")
+    logger.info(f"Query length: {len(request.query)} characters")
+    logger.info(f"Query validation: ACCEPTED (no length restrictions)")
     
     try:
         # Initialize LangGraph query processor
