@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     query_model_endpoint: Optional[str] = "https://chgai.services.ai.azure.com/models"
     
     # Query Analysis Model
-    analysis_model_name: str = "Llama-4-Maverick-17B-128E-Instruct-FP8"
+    analysis_model_name: str = "gpt-4o"
     analysis_model_endpoint: Optional[str] = "https://chgai.services.ai.azure.com/models"
     
     # Vector Database Configuration
