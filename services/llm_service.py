@@ -19,6 +19,8 @@ from azure.ai.inference.models import SystemMessage, UserMessage
 from azure.core.credentials import AzureKeyCredential
 from config import settings
 
+logger = logging.getLogger(__name__)
+
 # Try to import PIL for image processing
 PIL_AVAILABLE = False
 try:
@@ -27,8 +29,6 @@ try:
     logger.info("PIL available for image processing")
 except ImportError:
     logger.warning("PIL not available - image processing will be limited")
-
-logger = logging.getLogger(__name__)
 
 class LLMService:
     def __init__(self):
