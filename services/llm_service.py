@@ -11,11 +11,24 @@ import re
 import tiktoken
 import threading
 import asyncio
+import base64
+from io import BytesIO
 from typing import List, Dict, Any, Optional
 from azure.ai.inference import ChatCompletionsClient
 from azure.ai.inference.models import SystemMessage, UserMessage
 from azure.core.credentials import AzureKeyCredential
 from config import settings
+
+# Try to import PIL for image processing
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+    logger = logging.getLogger(__name__)
+    logger.info("PIL available for image processing")
+except ImportError as e:
+    PIL_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning(f"PIL not available - image processing will be disabled: {e}")
 
 logger = logging.getLogger(__name__)
 
@@ -118,25 +131,83 @@ class LLMService:
         # Always include tables and full data for comprehensive responses
         return True
 
-    def _filter_chunk_content(self, chunk: Dict[str, Any], needs_tables: bool) -> str:
-        """Extract full chunk content including all data and tables"""
+    def _filter_chunk_content(self, chunk: Dict[str, Any], needs_tables: bool) -> Dict[str, Any]:
+        """Extract full chunk content including text, images, and tables for multi-modal processing"""
         try:
             if "metadata" in chunk and "document" in chunk:
                 heading = chunk.get("metadata", {}).get("heading", "")
                 content = chunk.get("document", "")
+                embedded_images = chunk.get("embedded_images", [])
+                tables = chunk.get("tables", [])
             else:
                 heading = chunk.get("heading", "")
                 content = chunk.get("text", chunk.get("content", ""))
+                embedded_images = chunk.get("embedded_images", [])
+                tables = chunk.get("tables", [])
             
             if not content:
-                return ""
+                return {"text": "", "images": [], "tables": []}
+            
+            # Process images for multi-modal LLM
+            processed_images = []
+            for i, img in enumerate(embedded_images):
+                try:
+                    if PIL_AVAILABLE:
+                        # Convert base64 to JPG format for LLM
+                        # Decode base64 image
+                        image_data = base64.b64decode(img.data)
+                        
+                        # Convert to PIL Image
+                        pil_image = Image.open(BytesIO(image_data))
+                        
+                        # Convert to RGB if necessary (for JPG compatibility)
+                        if pil_image.mode in ('RGBA', 'LA', 'P'):
+                            pil_image = pil_image.convert('RGB')
+                        
+                        # Convert to JPG format
+                        jpg_buffer = BytesIO()
+                        pil_image.save(jpg_buffer, format='JPEG', quality=85)
+                        jpg_data = jpg_buffer.getvalue()
+                        
+                        # Encode back to base64 for LLM
+                        jpg_base64 = base64.b64encode(jpg_data).decode('utf-8')
+                        
+                        processed_images.append({
+                            "image_number": i + 1,
+                            "filename": img.filename,
+                            "data": jpg_base64,
+                            "mime_type": "image/jpeg",
+                            "description": f"Image {i + 1}: {img.filename}"
+                        })
+                        
+                        logger.info(f"Processed image {i + 1}: {img.filename} -> JPG format for LLM")
+                    else:
+                        # PIL not available, use original image data
+                        processed_images.append({
+                            "image_number": i + 1,
+                            "filename": img.filename,
+                            "data": img.data,  # Keep original base64 data
+                            "mime_type": img.mime_type,
+                            "description": f"Image {i + 1}: {img.filename}"
+                        })
+                        
+                        logger.info(f"Using original image {i + 1}: {img.filename} (PIL not available)")
+                    
+                except Exception as e:
+                    logger.warning(f"Error processing image {i + 1}: {str(e)}")
+                    continue
             
             # Always return full content including tables, specifications, and all data
-            # No filtering - use complete chunk data for comprehensive responses
-            return content
+            # Now includes processed images for multi-modal LLM
+            return {
+                "text": content,
+                "images": processed_images,
+                "tables": tables,
+                "heading": heading
+            }
         except Exception as e:
             logger.warning(f"Error extracting chunk content: {str(e)}")
-            return ""
+            return {"text": "", "images": [], "tables": []}
 
     async def assess_information_sufficiency(self, chunks: List[Dict[str, Any]], query: str) -> Dict[str, Any]:
         """Assess if we have sufficient information to answer the query completely"""
@@ -287,23 +358,51 @@ Return ONLY the JSON object, no additional text."""
         needs_tables = self._needs_table_data(query)
         logger.info(f"Query analysis - Tables needed: {needs_tables}")
         
-        # Prepare context from chunks
+        # Prepare context from chunks with multi-modal content
         context_parts = []
         chunk_headings = []
+        all_images = []
+        image_counter = 1
+        
         for chunk in chunks:
             try:
-                if "metadata" in chunk and "document" in chunk:
-                    heading = chunk.get("metadata", {}).get("heading", "")
-                else:
-                    heading = chunk.get("heading", "")
-                
-                # Filter content based on table needs
-                content = self._filter_chunk_content(chunk, needs_tables)
+                # Filter content based on table needs (now returns dict with text, images, tables)
+                chunk_data = self._filter_chunk_content(chunk, needs_tables)
                 
                 # Include all chunks that have content - let the LLM decide relevance
-                if content and content.strip():
-                    context_parts.append(f"**{heading}**\n{content}")
+                if chunk_data.get("text") and chunk_data["text"].strip():
+                    heading = chunk_data.get("heading", "")
+                    text_content = chunk_data["text"]
+                    images = chunk_data.get("images", [])
+                    tables = chunk_data.get("tables", [])
+                    
+                    # Build context part with text
+                    context_part = f"**{heading}**\n{text_content}"
+                    
+                    # Add tables if present
+                    if tables:
+                        context_part += f"\n\n**Tables in this section:**\n"
+                        for i, table in enumerate(tables, 1):
+                            context_part += f"\nTable {i}:\n{table}\n"
+                    
+                    # Add image references
+                    if images:
+                        context_part += f"\n\n**Images in this section:**\n"
+                        for img in images:
+                            context_part += f"- {img['description']}\n"
+                            # Add to global image list for LLM
+                            all_images.append({
+                                "image_number": image_counter,
+                                "data": img["data"],
+                                "mime_type": img["mime_type"],
+                                "description": f"Image {image_counter}: {img['filename']} from section '{heading}'"
+                            })
+                            image_counter += 1
+                    
+                    context_parts.append(context_part)
                     chunk_headings.append(heading)
+                    
+                    logger.info(f"Processed chunk '{heading}' with {len(images)} images and {len(tables)} tables")
                 else:
                     logger.warning(f"Skipping chunk with no content")
             except Exception as e:
@@ -338,28 +437,34 @@ Query Analysis:
 - Reasoning: {reasoning}
 """
         
-        system_prompt = f"""You are a technical documentation assistant. You must respond with a valid JSON object containing the answer and referenced sections.
+        # Build image context for multi-modal processing
+        image_context = ""
+        if all_images:
+            image_context = f"\n\nIMAGES AVAILABLE: {len(all_images)} images are provided with this context. You can reference them as 'Image 1', 'Image 2', etc. Use these images to provide visual context and specific details from diagrams, charts, or illustrations."
 
-Context Information: {table_info}{analysis_info}
+        system_prompt = f"""You are a technical documentation assistant with multi-modal capabilities. You can analyze both text and images to provide comprehensive answers. You must respond with a valid JSON object containing the answer and referenced sections.
+
+Context Information: {table_info}{analysis_info}{image_context}
 
 CRITICAL: Your response must be ONLY a valid JSON object with this exact structure:
 {{
-    "response": "Your detailed answer to the user's question",
+    "response": "Your detailed answer to the user's question with image references",
     "chunks_used": ["List of section headings you referenced"]
 }}
 
-ABSOLUTE REQUIREMENT: NEVER mention chapter numbers, section numbers, or give generic references like "as described in chapter X". ALWAYS provide the actual content from the documentation chunks.
+ABSOLUTE REQUIREMENT: NEVER mention chapter numbers, section numbers, or give generic references like "as described in chapter X". ALWAYS provide the actual content from the documentation chunks and images.
 
 CRITICAL CONTENT REQUIREMENTS - NO EXCEPTIONS:
-- ONLY use information from the provided documentation chunks above
+- ONLY use information from the provided documentation chunks and images above
 - NEVER mention chapter numbers, section numbers, or page references
 - NEVER say "as described in", "refer to", "see chapter", "check section", or "please refer to"
 - NEVER give generic responses like "as described in chapter 4.1" or "refer to section X"
-- ALWAYS provide the actual content from the chunks instead of references
-- If you have the information in the chunks, provide the complete details
+- ALWAYS provide the actual content from the chunks and images instead of references
+- If you have the information in the chunks or images, provide the complete details
 - If you don't have the information, say "This information is not available in the provided documentation"
 - Extract and present the actual steps, procedures, and details from the documentation
 - Quote specific values, measurements, and technical details directly from the chunks
+- Reference images naturally: "as shown in Image 1", "see Image 2", "the diagram in Image 3 shows"
 
 RESPONSE FORMAT REQUIREMENTS:
 - Structure your response in clear, numbered steps (1., 2., 3., etc.)
@@ -368,6 +473,8 @@ RESPONSE FORMAT REQUIREMENTS:
 - Make each step clear and actionable
 - Use proper formatting with line breaks between steps
 - Include specific values, measurements, and technical details from the documentation
+- Reference images when they provide relevant visual information
+- Use image references like "as shown in Image 1", "see the diagram in Image 2", etc.
 
 Do not include any text before or after the JSON object."""
         
@@ -380,12 +487,17 @@ Do not include any text before or after the JSON object."""
 IMPORTANT: This query has been analyzed as containing multiple questions: {individual_questions}
 Please ensure your response addresses all aspects of the original query comprehensively."""
         
-        user_prompt = f"""Based on the following documentation, answer the user's question and return a JSON response.
+        # Build image information for user prompt
+        image_info = ""
+        if all_images:
+            image_info = f"\n\nIMAGES PROVIDED: {len(all_images)} images are included with this context. Analyze these images along with the text to provide comprehensive answers. Reference images as 'Image 1', 'Image 2', etc. when they contain relevant information."
+
+        user_prompt = f"""Based on the following documentation and images, answer the user's question and return a JSON response.
 
 Documentation Context:
 {context}
 
-Available Section Headings: {chunk_headings}
+Available Section Headings: {chunk_headings}{image_info}
 
 User Question: {query}{analysis_guidance}
 
@@ -431,11 +543,35 @@ Return ONLY the JSON object, no additional text."""
             logger.info(f"Acquiring API semaphore for query request (Thread: {threading.current_thread().name})")
             async with self._api_semaphore:
                 logger.info(f"API semaphore acquired, making query request to {model_config['name']}")
+                
+                # Prepare messages for multi-modal input
+                messages = [SystemMessage(content=system_prompt)]
+                
+                # Create user message with images if available
+                if all_images:
+                    logger.info(f"Including {len(all_images)} images in multi-modal request")
+                    # For GPT-4o, we need to include images in the user message
+                    user_content = [{"type": "text", "text": user_prompt}]
+                    
+                    # Add images to the content
+                    for img in all_images:
+                        user_content.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{img['mime_type']};base64,{img['data']}",
+                                "detail": "high"
+                            }
+                        })
+                    
+                    messages.append(UserMessage(content=user_content))
+                    logger.info(f"Multi-modal request prepared with {len(all_images)} images")
+                else:
+                    # No images, use text-only message
+                    messages.append(UserMessage(content=user_prompt))
+                    logger.info("Text-only request prepared (no images)")
+                
                 response = self.client.complete(
-                    messages=[
-                        SystemMessage(content=system_prompt),
-                        UserMessage(content=user_prompt)
-                    ],
+                    messages=messages,
                     max_tokens=self.max_completion_tokens,
                     temperature=0.1,
                     top_p=0.1,
