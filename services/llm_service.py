@@ -339,6 +339,24 @@ CRITICAL: Your response must be ONLY a valid JSON object with this exact structu
     "chunks_used": ["List of section headings you referenced"]
 }}
 
+IMPORTANT JSON FORMAT REQUIREMENTS:
+- The "response" field must be a STRING, not an object or array
+- The "chunks_used" field must be an ARRAY of strings
+- Do NOT create nested structures like {{"response": {{"question": "answer"}}}}
+- Do NOT use question-answer pairs in the response field
+- The response field should contain the complete answer as a single string
+
+CORRECT JSON EXAMPLE:
+{{
+    "response": "1. Check all safety systems are operational. 2. Verify power supply connections. 3. Inspect machine components for damage.",
+    "chunks_used": ["Safety Procedures", "Maintenance Checklist"]
+}}
+
+WRONG JSON EXAMPLES (DO NOT USE):
+❌ {{"response": {{"1. What maintenance procedures are required?": ["answer1", "answer2"]}}, "chunks_used": []}}
+❌ {{"response": {{"question": "answer"}}, "chunks_used": []}}
+❌ {{"response": ["item1", "item2"], "chunks_used": []}}
+
 ABSOLUTE REQUIREMENT: NEVER mention chapter numbers, section numbers, or give generic references like "as described in chapter X". ALWAYS provide the actual content from the documentation chunks.
 
 CRITICAL CONTENT REQUIREMENTS - NO EXCEPTIONS:
@@ -412,6 +430,12 @@ EXAMPLE OF CORRECT RESPONSE:
 
 Provide a comprehensive answer based ONLY on the documentation provided above. In the "chunks_used" array, list the exact section headings from the available headings that you referenced in your answer.
 
+CRITICAL JSON FORMAT REMINDER:
+- The "response" field must be a STRING containing your complete answer
+- Do NOT use nested objects like {{"response": {{"question": "answer"}}}}
+- Do NOT use arrays for the response field
+- The response should be a single string with your complete answer
+
 Return ONLY the JSON object, no additional text."""
         
         try:
@@ -453,6 +477,51 @@ Return ONLY the JSON object, no additional text."""
                     json_str = json_str.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
                     
                     parsed_response = json.loads(json_str)
+                    
+                    # Handle nested response structure (LLM sometimes returns {"response": {"question": "answer"}})
+                    if "response" in parsed_response and isinstance(parsed_response["response"], dict):
+                        logger.warning("Detected nested response structure, converting to flat format")
+                        nested_response = parsed_response["response"]
+                        
+                        # Convert nested Q&A format to flat response
+                        if len(nested_response) == 1:
+                            # Single question-answer pair
+                            question, answer = next(iter(nested_response.items()))
+                            if isinstance(answer, list):
+                                # Answer is a list, join it
+                                response_text = "\n".join([f"{i+1}. {item}" for i, item in enumerate(answer)])
+                            else:
+                                response_text = str(answer)
+                        else:
+                            # Multiple question-answer pairs
+                            response_parts = []
+                            for question, answer in nested_response.items():
+                                response_parts.append(f"**{question}**")
+                                if isinstance(answer, list):
+                                    response_parts.extend([f"{i+1}. {item}" for i, item in enumerate(answer)])
+                                else:
+                                    response_parts.append(str(answer))
+                                response_parts.append("")  # Add spacing
+                            response_text = "\n".join(response_parts)
+                        
+                        # Create proper response structure
+                        parsed_response = {
+                            "response": response_text,
+                            "chunks_used": parsed_response.get("chunks_used", [])
+                        }
+                        logger.info("Successfully converted nested response to flat format")
+                    
+                    # Additional validation for response field type
+                    if "response" in parsed_response and not isinstance(parsed_response["response"], str):
+                        logger.warning(f"Response field is not a string, type: {type(parsed_response['response'])}")
+                        if isinstance(parsed_response["response"], list):
+                            # Convert list to string
+                            parsed_response["response"] = "\n".join([str(item) for item in parsed_response["response"]])
+                            logger.info("Converted list response to string")
+                        else:
+                            # Convert any other type to string
+                            parsed_response["response"] = str(parsed_response["response"])
+                            logger.info("Converted non-string response to string")
                     
                     # Validate required fields
                     if "response" in parsed_response and "chunks_used" in parsed_response:
