@@ -330,56 +330,29 @@ Query Analysis:
 - Reasoning: {reasoning}
 """
         
-        system_prompt = f"""You are a technical documentation assistant. You must respond with a valid JSON object containing the answer and referenced sections.
+        system_prompt = f"""You are a technical documentation assistant. Provide clear, structured answers based on the documentation.
 
-Context Information: {table_info}{analysis_info}
+Context: {table_info}{analysis_info}
 
-CRITICAL: Your response must be ONLY a valid JSON object with this exact structure:
+RESPONSE FORMAT:
+- Use numbered steps (1., 2., 3., etc.)
+- Put each step on a new line
+- Use bullet points for sub-items
+- Add line breaks between sections
+
+JSON FORMAT:
 {{
-    "response": "Your detailed answer to the user's question",
-    "chunks_used": ["List of section headings you referenced"]
+    "response": "Your formatted answer with line breaks",
+    "chunks_used": ["section headings you used"]
 }}
 
-IMPORTANT JSON FORMAT REQUIREMENTS:
-- The "response" field must be a STRING, not an object or array
-- The "chunks_used" field must be an ARRAY of strings
-- Do NOT create nested structures like {{"response": {{"question": "answer"}}}}
-- Do NOT use question-answer pairs in the response field
-- The response field should contain the complete answer as a single string
-
-CORRECT JSON EXAMPLE:
+EXAMPLE:
 {{
-    "response": "1. Check all safety systems are operational. 2. Verify power supply connections. 3. Inspect machine components for damage.",
-    "chunks_used": ["Safety Procedures", "Maintenance Checklist"]
+    "response": "1. Check conveyor belts weekly\\n2. Replace brushes as needed\\n\\nMaintenance Schedule:\\n• Daily: Clean scraper\\n• Weekly: Check roller head",
+    "chunks_used": ["Maintenance Procedures"]
 }}
 
-WRONG JSON EXAMPLES (DO NOT USE):
-❌ {{"response": {{"1. What maintenance procedures are required?": ["answer1", "answer2"]}}, "chunks_used": []}}
-❌ {{"response": {{"question": "answer"}}, "chunks_used": []}}
-❌ {{"response": ["item1", "item2"], "chunks_used": []}}
-
-ABSOLUTE REQUIREMENT: NEVER mention chapter numbers, section numbers, or give generic references like "as described in chapter X". ALWAYS provide the actual content from the documentation chunks.
-
-CRITICAL CONTENT REQUIREMENTS - NO EXCEPTIONS:
-- ONLY use information from the provided documentation chunks above
-- NEVER mention chapter numbers, section numbers, or page references
-- NEVER say "as described in", "refer to", "see chapter", "check section", or "please refer to"
-- NEVER give generic responses like "as described in chapter 4.1" or "refer to section X"
-- ALWAYS provide the actual content from the chunks instead of references
-- If you have the information in the chunks, provide the complete details
-- If you don't have the information, say "This information is not available in the provided documentation"
-- Extract and present the actual steps, procedures, and details from the documentation
-- Quote specific values, measurements, and technical details directly from the chunks
-
-RESPONSE FORMAT REQUIREMENTS:
-- Structure your response in clear, numbered steps (1., 2., 3., etc.)
-- Use bullet points or numbered lists for procedures and instructions
-- Break down complex processes into sequential steps
-- Make each step clear and actionable
-- Use proper formatting with line breaks between steps
-- Include specific values, measurements, and technical details from the documentation
-
-Do not include any text before or after the JSON object."""
+Return ONLY the JSON object."""
         
         # Add query analysis guidance if available
         analysis_guidance = ""
@@ -390,73 +363,23 @@ Do not include any text before or after the JSON object."""
 IMPORTANT: This query has been analyzed as containing multiple questions: {individual_questions}
 Please ensure your response addresses all aspects of the original query comprehensively."""
         
-        user_prompt = f"""Based on the following documentation, answer the user's question and return a JSON response.
-
-Documentation Context:
+        user_prompt = f"""Documentation:
 {context}
 
-Available Section Headings: {chunk_headings}
+Question: {query}{analysis_guidance}
 
-User Question: {query}{analysis_guidance}
+Instructions:
+- Answer using ONLY the documentation above
+- Format as numbered steps with line breaks
+- Use bullet points for lists
+- Include specific details from the documentation
+- List section headings you used in chunks_used
 
-INFORMATION ASSESSMENT:
-Before responding, evaluate:
-1. Do you have complete information to answer this question?
-2. What specific details are available in the provided chunks?
-3. What additional information might be needed for a complete answer?
-4. Can you provide actionable steps based on available information?
-
-MANDATORY RESPONSE RULES - FOLLOW EXACTLY:
-- READ the provided documentation chunks carefully
-- EXTRACT the actual information from the chunks
-- PROVIDE the complete details from the chunks, not references to them
-- NEVER mention "chapter 4.1", "section X", or any chapter/section numbers
-- NEVER say "as described in", "refer to", "see chapter", or "check section"
-- NEVER give generic responses like "as described in chapter 4.1 Preparing for operational readiness"
-- ALWAYS provide the actual steps, procedures, and details from the documentation
-- If the information is in the chunks, provide it completely
-- If the information is not in the chunks, say "This information is not available in the provided documentation"
-
-IMPORTANT FORMATTING INSTRUCTIONS:
-- Structure your response as clear, numbered steps (1., 2., 3., etc.)
-- Break down procedures into sequential, actionable steps
-- Use bullet points for lists and sub-items
-- Make each step specific and easy to follow
-- Include proper line breaks between steps for readability
-- Include specific values, measurements, and technical details from the documentation
-- Use double line breaks (\n\n) between major sections
-- Use single line breaks (\n) between individual steps
-- Format lists with proper indentation and bullet points
-- Ensure each step is on its own line for clarity
-
-EXAMPLE OF CORRECT RESPONSE FORMAT:
-❌ WRONG: "1. Ensure the machine is ready for operation as described in chapter 4.1"
-✅ CORRECT FORMAT:
-"1. Check all safety systems are operational
-2. Verify power supply connections  
-3. Inspect machine components for damage
-
-Maintenance Procedures:
-• Check conveyor belts weekly
-• Replace brushes as needed
-• Clean machine tables daily
-
-Frequency Schedule:
-- Daily: Clean scraper, rollers, dough catch pans
-- Weekly: Check roller head and machine base
-- Annually: Grease spindle in roller adjustment"
-
-Provide a comprehensive answer based ONLY on the documentation provided above. In the "chunks_used" array, list the exact section headings from the available headings that you referenced in your answer.
-
-CRITICAL JSON FORMAT REMINDER:
-- The "response" field must be a STRING containing your complete answer
-- Do NOT use nested objects like {{"response": {{"question": "answer"}}}}
-- Do NOT use arrays for the response field
-- The response should be a single string with your complete answer
-- Use proper line breaks (\n) in your response string for formatting
-- Each step should be on a separate line for better readability
-
-Return ONLY the JSON object, no additional text."""
+Return JSON format:
+{{
+    "response": "Your answer with \\n for line breaks",
+    "chunks_used": ["section headings"]
+}}"""
         
         try:
             # Get query model configuration
