@@ -224,8 +224,9 @@ Return ONLY the JSON object, no additional text."""
                     import re
                     # Remove or replace problematic control characters
                     json_str = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', json_str)
-                    # Fix common JSON issues
-                    json_str = json_str.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+                    # Fix common JSON issues - preserve structure for nested objects
+                    # Only remove carriage returns, preserve newlines and tabs for proper JSON structure
+                    json_str = json_str.replace('\r', '')
                     
                     assessment = json.loads(json_str)
                     
@@ -473,8 +474,9 @@ Return ONLY the JSON object, no additional text."""
                     import re
                     # Remove or replace problematic control characters
                     json_str = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', json_str)
-                    # Fix common JSON issues
-                    json_str = json_str.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+                    # Fix common JSON issues - preserve structure for nested objects
+                    # Only remove carriage returns, preserve newlines and tabs for proper JSON structure
+                    json_str = json_str.replace('\r', '')
                     
                     parsed_response = json.loads(json_str)
                     
@@ -640,8 +642,9 @@ Do not include any text before or after the JSON object."""
                     import re
                     # Remove or replace problematic control characters
                     json_str = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', json_str)
-                    # Fix common JSON issues
-                    json_str = json_str.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+                    # Fix common JSON issues - preserve structure for nested objects
+                    # Only remove carriage returns, preserve newlines and tabs for proper JSON structure
+                    json_str = json_str.replace('\r', '')
                     
                     parsed_response = json.loads(json_str)
                     
