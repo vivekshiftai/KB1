@@ -424,10 +424,27 @@ IMPORTANT FORMATTING INSTRUCTIONS:
 - Make each step specific and easy to follow
 - Include proper line breaks between steps for readability
 - Include specific values, measurements, and technical details from the documentation
+- Use double line breaks (\n\n) between major sections
+- Use single line breaks (\n) between individual steps
+- Format lists with proper indentation and bullet points
+- Ensure each step is on its own line for clarity
 
-EXAMPLE OF CORRECT RESPONSE:
+EXAMPLE OF CORRECT RESPONSE FORMAT:
 ❌ WRONG: "1. Ensure the machine is ready for operation as described in chapter 4.1"
-✅ CORRECT: "1. Check all safety systems are operational. 2. Verify power supply connections. 3. Inspect machine components for damage."
+✅ CORRECT FORMAT:
+"1. Check all safety systems are operational
+2. Verify power supply connections  
+3. Inspect machine components for damage
+
+Maintenance Procedures:
+• Check conveyor belts weekly
+• Replace brushes as needed
+• Clean machine tables daily
+
+Frequency Schedule:
+- Daily: Clean scraper, rollers, dough catch pans
+- Weekly: Check roller head and machine base
+- Annually: Grease spindle in roller adjustment"
 
 Provide a comprehensive answer based ONLY on the documentation provided above. In the "chunks_used" array, list the exact section headings from the available headings that you referenced in your answer.
 
@@ -436,6 +453,8 @@ CRITICAL JSON FORMAT REMINDER:
 - Do NOT use nested objects like {{"response": {{"question": "answer"}}}}
 - Do NOT use arrays for the response field
 - The response should be a single string with your complete answer
+- Use proper line breaks (\n) in your response string for formatting
+- Each step should be on a separate line for better readability
 
 Return ONLY the JSON object, no additional text."""
         
