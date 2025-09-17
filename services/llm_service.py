@@ -361,20 +361,29 @@ class LLMService:
         
         context = "\n\n".join(context_parts)
         
-        assessment_prompt = f"""Analyze if you have sufficient information to answer this question.
+        assessment_prompt = f"""Analyze if you have sufficient information to provide a complete, self-contained answer without referencing other sections.
 
 Available Information:
 {context}
 
 User Question: {query}
 
+Critical assessment criteria:
+- Can you provide ALL necessary steps and details directly in your answer?
+- Do you have complete procedures without needing to say "as described in section X"?
+- Are there any preparation steps or prerequisites that would require additional information?
+- Can you include all specific values, measurements, and technical details needed?
+- Would you need to reference other sections or chapters to complete the answer?
+
+If you would need to reference other sections (like "see section 4.1") or if preparation steps lack specific details, mark as insufficient information.
+
 Respond with JSON:
 {{
     "has_sufficient_info": true/false,
-    "missing_information": ["list of missing info"],
+    "missing_information": ["specific missing details"],
     "additional_queries_needed": ["search terms for missing info"],
     "confidence_score": 0.0-1.0,
-    "reasoning": "brief explanation"
+    "reasoning": "explanation focusing on completeness"
 }}"""
         
         try:
@@ -578,27 +587,34 @@ Query Analysis:
 - Reasoning: {reasoning}
 """
         
-        system_prompt = f"""You are a technical documentation assistant with visual analysis capabilities. Answer questions using both the provided text documentation and the accompanying images.
+        system_prompt = f"""You are a technical documentation assistant with visual analysis capabilities. Provide complete, self-contained answers using the provided documentation and images.
 
 {table_info}{image_context}{analysis_info}
 
-Instructions for comprehensive responses:
-- Analyze both the text content and the images provided
-- Use the images to enhance your understanding and provide more complete answers
-- Reference images naturally when they support your explanation (e.g., "as shown in image 1", "refer to image 2")
-- Combine information from text and images to provide thorough, actionable guidance
-- When images show important details, controls, or procedures, mention them in your response
+Critical response requirements:
+- Provide all necessary details directly in your answer - never say "as described in section X" or "refer to chapter Y"
+- Include the actual steps, procedures, and information rather than references to other sections
+- If you need to mention preparation steps or prerequisites, include the specific details of what needs to be done
+- Analyze both text content and images to provide comprehensive guidance
+- Use images to enhance understanding and reference them naturally (e.g., "as shown in image 1")
+- Suggest only images that are directly relevant to answering the user's specific question
+
+Response quality standards:
+- Every step must be actionable and complete
+- Include specific details, values, and procedures from the documentation
+- Combine text instructions with visual references for clarity
+- Focus on providing practical, implementable guidance
 
 Response formatting:
 - Use **bold** for main headings
 - Use numbered steps (1., 2., 3., etc.)
 - Use bullet points for sub-items
 - Add line breaks between sections
-- Reference images when they add value to the explanation
+- Reference images when they support the explanation
 
 Respond in JSON format:
 {{
-    "response": "Your comprehensive answer combining text and visual information with \\n for line breaks and **bold** headings",
+    "response": "Your complete, self-contained answer with all necessary details",
     "chunks_used": ["section headings you referenced"],
     "suggested_images": ["image 1", "image 2"]
 }}"""
@@ -640,23 +656,26 @@ Important: These images contain crucial visual information. Please:
 
 Question: {query}{analysis_guidance}{image_info}
 
-Please provide a comprehensive answer by carefully analyzing both the text documentation and all the images provided.
+Provide a complete, self-contained answer using the documentation and images. Include all necessary details directly in your response.
 
 Visual Analysis Instructions:
-- Examine each image thoroughly to understand what it depicts (control panels, screens, buttons, equipment, diagrams)
-- Look for visual elements that support or illustrate the text instructions
-- Identify specific controls, indicators, or interface elements shown in the images
-- Use the visual information to provide more detailed and specific guidance
-- Reference images naturally throughout your answer when they add clarity
+ instructions:
+- Include the actual steps and procedures in your answer, not references to sections
+- If you mention preparation steps or prerequisites, provide the specific details of what needs to be done
+- Analyze the images and use them to enhance your answer with visual context
+- Suggest only images that are directly relevant to answering this specific question
 
-Response Enhancement Guidelines:
-- When describing procedures, reference relevant images (e.g., "Press the Start button as shown in image 1")
-- When mentioning controls or screens, point to the corresponding image (e.g., "Navigate to the Recipe screen (refer to image 2)")
-- Include visual details that help users identify what they're looking for
-- Combine text instructions with visual references for maximum clarity
-- Make your answer actionable by using both written steps and visual guidance
+Image analysis and suggestions:
+- Examine each image to identify relevant visual elements for this specific query
+- Reference images naturally when they support your explanation (e.g., "as shown in image 1")
+- In the suggested_images field, include ONLY the numbered image names that are directly relevant to answering the user's question
+- Focus on images that show the specific procedures, controls, or equipment mentioned in your answer
 
-In the suggested_images field, include the numbered image names (e.g., "image 1", "image 2") that you referenced in your answer or that are essential for understanding the procedures."""
+Quality requirements:
+- Every step must be complete and actionable
+- Include specific details from the documentation
+- Combine text instructions with relevant visual references
+- Provide practical, implementable guidance without section references"""
         
         try:
             # Get query model configuration
@@ -817,14 +836,18 @@ In the suggested_images field, include the numbered image names (e.g., "image 1"
                             r"as described in section [\d\.]+[^.]*",
                             r"refer to section [\d\.]+[^.]*",
                             r"see section [\d\.]+[^.]*",
-                            r"check section [\d\.]+[^.]*"
+                            r"check section [\d\.]+[^.]*",
+                            r"described in section [\d\.]+[^.]*",
+                            r"in section [\d\.]+[^.]*of the documentation",
+                            r"section [\d\.]+[^.]*of the documentation"
                         ]
                         
                         for pattern in generic_patterns:
                             if re.search(pattern, response_text, re.IGNORECASE):
-                                logger.warning(f"Found generic reference in response: {pattern}")
-                                # Replace with a more appropriate message
-                                response_text = re.sub(pattern, "Please refer to the specific procedures in the documentation", response_text, flags=re.IGNORECASE)
+                                logger.warning(f"Found and removing generic reference: {pattern}")
+                                # Remove the generic reference entirely
+                                response_text = re.sub(pattern, "", response_text, flags=re.IGNORECASE)
+                                logger.info("Generic reference removed from response")
                         
                         # Post-process to remove any unwanted metadata sections
                         response_text = self._clean_response_text(response_text)
