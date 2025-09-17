@@ -664,49 +664,34 @@ Please decide:
         return state
     
     def _collect_media_from_chunks(self, state: QueryState) -> tuple[List[ImageData], List[str]]:
-        """Collect images and tables from used chunks"""
+        """Collect images from all chunks and tables from referenced chunks"""
         images = []
         tables = []
         seen_image_filenames = set()
         
-        # Get used chunks based on LLM response
-        used_chunks = []
+        # Get current chunks and chunks referenced by LLM
+        current_chunks = state.get("current_chunks", [])
         chunks_used = state["llm_response"].get("chunks_used", [])
         
-        # Ensure current_chunks exists and is a list
-        current_chunks = state.get("current_chunks", [])
         if not isinstance(current_chunks, list):
             logger.warning(f"current_chunks is not a list: {type(current_chunks)}")
             current_chunks = []
         
+        logger.info(f"Collecting images from all {len(current_chunks)} chunks (LLM had access to all images)")
+        logger.info(f"Collecting tables only from referenced chunks: {chunks_used}")
+        
+        # Collect images from ALL chunks (since LLM saw all images)
         for i, chunk in enumerate(current_chunks):
-            chunk_used = False
-            heading = chunk.get("metadata", {}).get("heading", "")
-            
-            for referenced_heading in chunks_used:
-                if (heading.lower() == referenced_heading.lower() or
-                    heading.lower() in referenced_heading.lower() or
-                    referenced_heading.lower() in heading.lower() or
-                    referenced_heading.lower() == f"chunk {i+1}"):
-                    chunk_used = True
-                    break
-            
-            if chunk_used:
-                used_chunks.append(chunk)
-        
-        # If no chunks matched, use all chunks
-        if not used_chunks:
-            used_chunks = current_chunks
-        
-        # Collect embedded images and tables from chunks
-        for chunk in used_chunks:
             if not isinstance(chunk, dict):
                 logger.warning(f"Skipping non-dict chunk: {type(chunk)}")
                 continue
                 
-            # Collect embedded images (base64 data already in chunks)
+            chunk_heading = chunk.get("metadata", {}).get("heading", f"Chunk {i+1}")
+            
+            # Always collect images from this chunk
             embedded_images = chunk.get("embedded_images", [])
-            if isinstance(embedded_images, list):
+            if isinstance(embedded_images, list) and embedded_images:
+                logger.info(f"Found {len(embedded_images)} images in chunk '{chunk_heading}'")
                 for img in embedded_images:
                     if hasattr(img, 'filename'):
                         filename = img.filename
@@ -716,16 +701,30 @@ Please decide:
                     if filename not in seen_image_filenames:
                         images.append(img)
                         seen_image_filenames.add(filename)
+                        logger.info(f"Added image: {filename} from chunk '{chunk_heading}'")
+                    else:
+                        logger.info(f"Skipped duplicate image: {filename}")
             
-            # Collect tables
-            chunk_tables = chunk.get("tables", [])
-            if isinstance(chunk_tables, list):
-                tables.extend(chunk_tables)
+            # Only collect tables from referenced chunks
+            chunk_is_referenced = False
+            for referenced_heading in chunks_used:
+                if (chunk_heading.lower() == referenced_heading.lower() or
+                    chunk_heading.lower() in referenced_heading.lower() or
+                    referenced_heading.lower() in chunk_heading.lower() or
+                    referenced_heading.lower() == f"chunk {i+1}"):
+                    chunk_is_referenced = True
+                    break
+            
+            if chunk_is_referenced:
+                chunk_tables = chunk.get("tables", [])
+                if isinstance(chunk_tables, list):
+                    tables.extend(chunk_tables)
+                    logger.info(f"Added {len(chunk_tables)} tables from referenced chunk '{chunk_heading}'")
         
         # Remove duplicate tables
         tables = list(set(tables))
         
-        logger.info(f"Collected {len(images)} embedded images and {len(tables)} tables from chunks")
+        logger.info(f"Final collection: {len(images)} embedded images and {len(tables)} tables")
         
         return images, tables
     
