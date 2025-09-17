@@ -740,9 +740,11 @@ Please decide:
         logger.info(f"Validating {len(suggested_images)} suggested images: {suggested_images}")
         
         # Collect all available images from current chunks for validation
+        # Create numbered image names that match what LLM knows about
         all_available_images = set()
         current_chunks = state.get("current_chunks", [])
         
+        image_counter = 1
         for chunk in current_chunks:
             if not isinstance(chunk, dict):
                 continue
@@ -750,10 +752,10 @@ Please decide:
             embedded_images = chunk.get("embedded_images", [])
             if isinstance(embedded_images, list):
                 for img in embedded_images:
-                    if hasattr(img, 'filename'):
-                        all_available_images.add(img.filename)
-                    elif isinstance(img, dict) and 'filename' in img:
-                        all_available_images.add(img['filename'])
+                    # Add numbered image name instead of filename
+                    numbered_image_name = f"image {image_counter}"
+                    all_available_images.add(numbered_image_name)
+                    image_counter += 1
         
         # Validate suggested images (for logging purposes only)
         valid_suggestions = 0

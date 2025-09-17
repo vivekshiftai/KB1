@@ -482,7 +482,7 @@ Respond with JSON:
                         "tables": tables
                     })
                     
-                    # Collect all available image names
+                    # Collect all available image names (will be converted to numbered names later)
                     for img in images:
                         if img['filename'] not in all_available_images:
                             all_available_images.append(img['filename'])
@@ -513,18 +513,25 @@ Respond with JSON:
         # Enhanced prompt for structured JSON response
         table_info = "Full documentation data including tables, specifications, and all technical details has been included in the context for comprehensive analysis."
         
-        # Add image context information
+        # Create numbered image list for LLM context
         image_context = ""
         total_images = sum(len(chunk["images"]) for chunk in chunk_data_with_images)
         if total_images > 0:
-            image_list_text = ", ".join(all_available_images) if all_available_images else "none"
+            # Create numbered list of available images for LLM
+            numbered_image_list = []
+            image_counter = 1
+            for img_filename in all_available_images:
+                numbered_image_list.append(f"image {image_counter}: {img_filename}")
+                image_counter += 1
+            
+            image_list_text = ", ".join(numbered_image_list)
             image_context = f"""
 
-IMAGES AVAILABLE: {total_images} images are provided with this documentation. Each image is associated with its specific text content. Use these images to enhance your understanding and provide visual context in your response.
+IMAGES AVAILABLE: {total_images} images are provided with this documentation. Each image is numbered for easy reference.
 
-Available image files: {image_list_text}
+Available images: {image_list_text}
 
-You can reference specific images by their number (e.g., 'as shown in image 1', 'see image 2')."""
+You can reference images by their number (e.g., 'as shown in image 1', 'see image 2') and suggest them using their numbered names."""
         
         # Add query analysis information if available
         analysis_info = ""
@@ -556,7 +563,7 @@ Respond in JSON format:
 {{
     "response": "Your formatted answer with \\n for line breaks and **bold** headings",
     "chunks_used": ["section headings you referenced"],
-    "suggested_images": ["relevant_image_filenames.jpg"]
+    "suggested_images": ["image 1", "image 2"]
 }}"""
         
         # Add query analysis guidance if available
@@ -571,15 +578,20 @@ Please ensure your response addresses all aspects of the original query comprehe
         # Prepare image information for the prompt
         image_info = ""
         if total_images > 0:
+            # Create the same numbered list for user prompt
+            numbered_image_list = []
+            image_counter = 1
+            for img_filename in all_available_images:
+                numbered_image_list.append(f"image {image_counter}: {img_filename}")
+                image_counter += 1
+            
             image_info = f"""
 
-IMAGES PROVIDED: {total_images} images are included with this documentation. Each image is associated with its specific text content. 
+IMAGES PROVIDED: {total_images} images are included with this documentation.
 
-Available images: {", ".join(all_available_images)}
+Available images: {", ".join(numbered_image_list)}
 
-Use these images to provide visual context and reference them in your response (e.g., 'as shown in image 1', 'see image 2').
-
-For the suggested_images field, select the most relevant image filenames from the available list that would help users understand your response."""
+Reference images by their number (e.g., 'as shown in image 1', 'see image 2'). In the suggested_images field, use the numbered names (e.g., 'image 1', 'image 2') for images most relevant to your response."""
         
         user_prompt = f"""Documentation:
 {context}
@@ -588,7 +600,7 @@ Question: {query}{analysis_guidance}{image_info}
 
 Please answer this question using the documentation provided. Include specific steps and procedures. Reference images when helpful (e.g., "as shown in image 1").
 
-In the suggested_images field, include the filenames of images that are most relevant to your answer."""
+In the suggested_images field, include the numbered image names (e.g., "image 1", "image 2") that are most relevant to your answer."""
         
         try:
             # Get query model configuration
@@ -714,14 +726,11 @@ In the suggested_images field, include the filenames of images that are most rel
                         # Post-process to remove any remaining generic references
                         response_text = parsed_response["response"]
                         
-                        # Extract suggested images if provided by LLM
+                        # Extract suggested images if provided by LLM (already in numbered format)
                         suggested_images = parsed_response.get("suggested_images", [])
                         
-                        # Convert suggested images from filenames to numbered references
-                        suggested_image_references = self._convert_to_image_references(suggested_images, image_reference_mapping)
-                        
-                        # Validate suggested images against available images
-                        validated_suggested_images = self._validate_suggested_images(suggested_images, all_available_images)
+                        # LLM should already be suggesting numbered names like "image 1", "image 2"
+                        # No need to convert since LLM knows images by their numbered names
                         
                         # Ensure re module is available
                         import re
@@ -748,15 +757,14 @@ In the suggested_images field, include the filenames of images that are most rel
                         response_text = self._clean_response_text(response_text)
                         parsed_response["response"] = response_text
                         
-                        # Add image tracking information (using numbered references)
-                        parsed_response["suggested_images"] = suggested_image_references
+                        # Add image tracking information (LLM already uses numbered references)
+                        parsed_response["suggested_images"] = suggested_images  # Already numbered
                         parsed_response["images_used_for_response"] = images_used_for_response
                         parsed_response["image_reference_mapping"] = image_reference_mapping
                         
                         logger.info(f"Successfully parsed JSON response with {len(parsed_response.get('chunks_used', []))} referenced chunks")
                         logger.info(f"Available images: {all_available_images}")
                         logger.info(f"LLM suggested images: {suggested_images}")
-                        logger.info(f"Suggested image references: {suggested_image_references}")
                         logger.info(f"Images used for response: {images_used_for_response}")
                         logger.info(f"Image reference mapping: {image_reference_mapping}")
                         return parsed_response
@@ -782,9 +790,8 @@ In the suggested_images field, include the filenames of images that are most rel
                     parsed_response = json.loads(json_str_clean)
                     if "response" in parsed_response and "chunks_used" in parsed_response:
                         # Add image tracking information for aggressive cleaning case
-                        suggested_images = parsed_response.get("suggested_images", [])
-                        suggested_image_references = self._convert_to_image_references(suggested_images, image_reference_mapping)
-                        parsed_response["suggested_images"] = suggested_image_references
+                        suggested_images = parsed_response.get("suggested_images", [])  # Already numbered
+                        parsed_response["suggested_images"] = suggested_images
                         parsed_response["images_used_for_response"] = images_used_for_response
                         parsed_response["image_reference_mapping"] = image_reference_mapping
                         logger.info("Successfully parsed JSON after aggressive cleaning")
