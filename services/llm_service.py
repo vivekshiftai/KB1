@@ -127,11 +127,15 @@ class LLMService:
             patterns_to_remove = [
                 r'\n\n\*\*Chunks Used:\*\*.*?(?=\n\n|\Z)',  # Remove "Chunks Used:" section
                 r'\n\n\*\*Visual References:\*\*.*?(?=\n\n|\Z)',  # Remove "Visual References:" section
+                r'\n\n\*\*Suggested Images:\*\*.*?(?=\n\n|\Z)',  # Remove "Suggested Images:" section
                 r'\nChunks Used:.*?(?=\n\n|\Z)',  # Remove "Chunks Used:" without bold
                 r'\nVisual References:.*?(?=\n\n|\Z)',  # Remove "Visual References:" without bold
+                r'\nSuggested Images:.*?(?=\n\n|\Z)',  # Remove "Suggested Images:" without bold
                 r'Chunks Used:\s*\n.*?(?=\n\n|\Z)',  # Remove "Chunks Used:" with list
                 r'Visual References:\s*\n.*?(?=\n\n|\Z)',  # Remove "Visual References:" with list
-                r'Important Notes:\s*\n.*?(?=\n\n|\Z)',  # Remove "Important Notes:" section if it contains metadata
+                r'Suggested Images:\s*\n.*?(?=\n\n|\Z)',  # Remove "Suggested Images:" with list
+                r'\*\*Suggested Images:\*\*\s*$',  # Remove standalone "**Suggested Images:**" at end
+                r'Suggested Images:\s*$',  # Remove standalone "Suggested Images:" at end
             ]
             
             cleaned_text = response_text
@@ -177,6 +181,37 @@ class LLMService:
             
         except Exception as e:
             logger.error(f"Error validating suggested images: {str(e)}")
+            return []
+    
+    def _convert_to_image_references(self, suggested_filenames: List[str], image_reference_mapping: Dict[str, str]) -> List[str]:
+        """Convert suggested image filenames to numbered references (image 1, image 2, etc.)"""
+        try:
+            # Create reverse mapping: filename -> "image X"
+            filename_to_reference = {filename: reference for reference, filename in image_reference_mapping.items()}
+            
+            suggested_references = []
+            for filename in suggested_filenames:
+                if filename in filename_to_reference:
+                    suggested_references.append(filename_to_reference[filename])
+                    logger.info(f"Converted '{filename}' to '{filename_to_reference[filename]}'")
+                else:
+                    # Try partial matching for similar filenames
+                    found_match = False
+                    for mapped_filename, reference in filename_to_reference.items():
+                        if (filename.lower() in mapped_filename.lower() or 
+                            mapped_filename.lower() in filename.lower()):
+                            suggested_references.append(reference)
+                            logger.info(f"Fuzzy matched '{filename}' to '{reference}' (actual: '{mapped_filename}')")
+                            found_match = True
+                            break
+                    
+                    if not found_match:
+                        logger.warning(f"Could not convert filename '{filename}' to image reference")
+            
+            return suggested_references
+            
+        except Exception as e:
+            logger.error(f"Error converting filenames to image references: {str(e)}")
             return []
     
     def _needs_table_data(self, query: str) -> bool:
@@ -294,14 +329,14 @@ class LLMService:
         
         context = "\n\n".join(context_parts)
         
-        assessment_prompt = f"""Analyze if you have sufficient information to answer the user's question completely.
+        assessment_prompt = f"""Please analyze if you have sufficient information to answer the user's question completely.
 
 Available Information:
 {context}
 
 User Question: {query}
 
-CRITICAL: Respond with ONLY a valid JSON object with this exact structure:
+Please respond with a JSON object using this structure:
 {{
     "has_sufficient_info": true/false,
     "missing_information": ["list of specific missing information"],
@@ -310,15 +345,15 @@ CRITICAL: Respond with ONLY a valid JSON object with this exact structure:
     "reasoning": "brief explanation of assessment"
 }}
 
-ASSESSMENT CRITERIA:
+Consider these factors:
 - Can you provide a complete, actionable answer?
 - Do you have all necessary steps, procedures, or details?
-- Are there any gaps that would require "refer to section X" responses?
+- Are there any information gaps?
 - Can you include specific values, measurements, and technical details?
 
-If missing information, provide specific search terms that would help find the missing details.
+If information is missing, suggest specific search terms that would help find the missing details.
 
-Return ONLY the JSON object, no additional text."""
+Provide the JSON response."""
         
         try:
             # Get analysis model configuration
@@ -498,37 +533,37 @@ Query Analysis:
 
 Context: {table_info}{image_context}{analysis_info}
 
-CRITICAL RULES:
-- NEVER mention "see section X", "refer to chapter Y", or "as described in Z"
-- NEVER say "refer to", "see", "check section", or "please refer to"
-- ALWAYS provide the actual content from the documentation
-- If information is missing, say "This information is not available in the provided documentation"
-- DO NOT include "Chunks Used", "Visual References", or any metadata sections in your response
-- DO NOT mention which chunks or sections you used in your response text
-- Focus only on providing the actual answer to the user's question
+Response requirements:
+- Include the actual content from the documentation instead of saying "see section X" or "refer to chapter Y"
+- Provide specific details, steps, and procedures directly in your answer
+- If information is missing, state "This information is not available in the provided documentation"
+- Focus on giving users practical, actionable information
+- Your response should contain only the answer content, without mentioning which chunks or sections you used
+- Avoid adding metadata sections like "Chunks Used:" or "Visual References:" to your response text
+- End your response with the actual content rather than metadata sections
 
-RESPONSE FORMAT:
+Response formatting:
 - Use **bold** for main headings
 - Use numbered steps (1., 2., 3., etc.)
 - Put each step on a new line
 - Use bullet points for sub-items
 - Add line breaks between sections
 
-JSON FORMAT:
+Required JSON format:
 {{
     "response": "Your formatted answer with line breaks and **bold** headings",
     "chunks_used": ["section headings you used"],
     "suggested_images": ["image1.png", "image2.jpg"]
 }}
 
-EXAMPLE:
+Example response:
 {{
     "response": "**Maintenance Procedures**\\n1. Check conveyor belts weekly\\n2. Replace brushes as needed\\n\\n**Daily Care:**\\n• Clean the scraper and rollers\\n• Clean the synthetic conveyor belt\\n\\n**Weekly Care:**\\n• Clean the roller head and machine base\\n• Clean the driving and idle rollers",
     "chunks_used": ["Maintenance Procedures"],
     "suggested_images": ["maintenance_belt.jpg", "roller_cleaning.png"]
 }}
 
-Return ONLY the JSON object."""
+Please provide only the JSON object in your response."""
         
         # Add query analysis guidance if available
         analysis_guidance = ""
@@ -557,28 +592,20 @@ For the suggested_images field, select the most relevant image filenames from th
 
 Question: {query}{analysis_guidance}{image_info}
 
-Instructions:
-- Answer using ONLY the documentation above
-- NEVER say "see section X", "refer to chapter Y", or "as described in Z"
-- NEVER use phrases like "refer to", "see", "check section", or "please refer to"
-- ALWAYS provide the actual content from the documentation
-- DO NOT include "Chunks Used", "Visual References", or any metadata sections in your response
-- DO NOT mention which chunks, sections, or images you used in your response text
-- Format as numbered steps with line breaks
-- Use **bold** for main headings
-- Use bullet points for lists
-- Include specific details from the documentation
-- Reference images when relevant (e.g., "as shown in image 1")
-- List section headings you used in chunks_used field only (not in response text)
+Please provide a complete answer using the documentation above. Include specific details, steps, and procedures directly from the documentation. Format your response with numbered steps and bold headings for clarity. 
 
-Return JSON format:
+When you reference images in your response text (e.g., "as shown in image 1"), make sure to include those same images in the suggested_images field using their actual filenames.
+
+Important: Your response should contain only the answer content. Avoid including sections like "Chunks Used:" or "Suggested Images:" in the response text itself.
+
+Return your response in this JSON format:
 {{
     "response": "Your answer with \\n for line breaks and **bold** headings",
     "chunks_used": ["section headings"],
     "suggested_images": ["relevant_image_names.jpg"]
 }}
 
-IMPORTANT: In the suggested_images field, include the names of images that are most relevant to your response. These should be images that would help users understand the procedures, concepts, or equipment mentioned in your answer."""
+In the suggested_images field, include the filenames of images that are most relevant to your response and that you reference in your answer text."""
         
         try:
             # Get query model configuration
@@ -591,7 +618,8 @@ IMPORTANT: In the suggested_images field, include the names of images that are m
                 
                 # Add images from each chunk with their associated text
                 image_counter = 1
-                images_used_for_response = []  # Track images used in response generation
+                images_used_for_response = []  # Track images used in response generation (as "image 1", "image 2", etc.)
+                image_reference_mapping = {}  # Map "image 1" -> actual filename
                 
                 for chunk_data in chunk_data_with_images:
                     if chunk_data["images"]:
@@ -610,8 +638,12 @@ IMPORTANT: In the suggested_images field, include the names of images that are m
                                     "detail": "high"
                                 }
                             })
-                            images_used_for_response.append(img['filename'])  # Track image usage
-                            logger.info(f"Added image {image_counter} to LLM request: {img['filename']} (from chunk: {chunk_data['heading']})")
+                            # Create numbered reference for this image
+                            image_reference = f"image {image_counter}"
+                            images_used_for_response.append(image_reference)
+                            image_reference_mapping[image_reference] = img['filename']
+                            
+                            logger.info(f"Added {image_reference} to LLM request: {img['filename']} (from chunk: {chunk_data['heading']})")
                             image_counter += 1
                 
                 response = self.client.complete(
@@ -702,6 +734,9 @@ IMPORTANT: In the suggested_images field, include the names of images that are m
                         # Extract suggested images if provided by LLM
                         suggested_images = parsed_response.get("suggested_images", [])
                         
+                        # Convert suggested images from filenames to numbered references
+                        suggested_image_references = self._convert_to_image_references(suggested_images, image_reference_mapping)
+                        
                         # Validate suggested images against available images
                         validated_suggested_images = self._validate_suggested_images(suggested_images, all_available_images)
                         
@@ -730,15 +765,17 @@ IMPORTANT: In the suggested_images field, include the names of images that are m
                         response_text = self._clean_response_text(response_text)
                         parsed_response["response"] = response_text
                         
-                        # Add image tracking information
-                        parsed_response["suggested_images"] = validated_suggested_images
+                        # Add image tracking information (using numbered references)
+                        parsed_response["suggested_images"] = suggested_image_references
                         parsed_response["images_used_for_response"] = images_used_for_response
+                        parsed_response["image_reference_mapping"] = image_reference_mapping
                         
                         logger.info(f"Successfully parsed JSON response with {len(parsed_response.get('chunks_used', []))} referenced chunks")
                         logger.info(f"Available images: {all_available_images}")
                         logger.info(f"LLM suggested images: {suggested_images}")
-                        logger.info(f"Validated suggested images: {validated_suggested_images}")
+                        logger.info(f"Suggested image references: {suggested_image_references}")
                         logger.info(f"Images used for response: {images_used_for_response}")
+                        logger.info(f"Image reference mapping: {image_reference_mapping}")
                         return parsed_response
                     else:
                         logger.warning("JSON response missing required fields, using fallback")
@@ -763,9 +800,10 @@ IMPORTANT: In the suggested_images field, include the names of images that are m
                     if "response" in parsed_response and "chunks_used" in parsed_response:
                         # Add image tracking information for aggressive cleaning case
                         suggested_images = parsed_response.get("suggested_images", [])
-                        validated_suggested_images = self._validate_suggested_images(suggested_images, all_available_images)
-                        parsed_response["suggested_images"] = validated_suggested_images
+                        suggested_image_references = self._convert_to_image_references(suggested_images, image_reference_mapping)
+                        parsed_response["suggested_images"] = suggested_image_references
                         parsed_response["images_used_for_response"] = images_used_for_response
+                        parsed_response["image_reference_mapping"] = image_reference_mapping
                         logger.info("Successfully parsed JSON after aggressive cleaning")
                         return parsed_response
                 except Exception as e2:
@@ -778,7 +816,8 @@ IMPORTANT: In the suggested_images field, include the names of images that are m
                     "response": cleaned_response,
                     "chunks_used": chunks_used,
                     "suggested_images": [],  # No suggestions available in fallback
-                    "images_used_for_response": images_used_for_response
+                    "images_used_for_response": images_used_for_response,
+                    "image_reference_mapping": image_reference_mapping
                 }
             
         except Exception as e:
@@ -790,7 +829,7 @@ IMPORTANT: In the suggested_images field, include the names of images that are m
         try:
             system_prompt = """You are an expert at analyzing user queries and breaking them down into individual questions. 
 
-CRITICAL: You must respond with ONLY a valid JSON object with this exact structure:
+Please respond with a JSON object using this structure:
 {
   "is_single_question": true/false,
   "question_count": number,
@@ -799,7 +838,7 @@ CRITICAL: You must respond with ONLY a valid JSON object with this exact structu
   "reasoning": "brief explanation"
 }
 
-Do not include any text before or after the JSON object."""
+Provide only the JSON response."""
             
             # Get analysis model configuration
             model_config = self._get_model_config("analysis")
@@ -1001,7 +1040,7 @@ Do not include any text before or after the JSON object."""
 
 IMPORTANT: The provided documentation includes complete technical data, tables, specifications, and detailed information. Use all available data to create precise monitoring rules.
 
-CRITICAL: You must respond with ONLY a valid JSON object with this exact structure:
+Please respond with a JSON object using this structure:
 {
   "rules": [
     {
@@ -1018,11 +1057,11 @@ CRITICAL: You must respond with ONLY a valid JSON object with this exact structu
   ]
 }
 
-CRITICAL IoT MONITORING REQUIREMENTS:
+IoT MONITORING REQUIREMENTS:
 - metric must be a SENSOR-MEASURABLE parameter (temperature, pressure, voltage, current, speed, vibration, etc.)
 - metric_value must be a specific numerical value with unit (e.g., "75°C", "1500 N", "85%", "220 V", "50 Hz")
 - threshold must be numerical conditions (e.g., "> 75°C", "< 20%", "> 1500 N", "= 220 V")
-- DO NOT use descriptive states like "hinged down", "pushed in", "equal distance" - these are not IoT metrics
+- Avoid descriptive states like "hinged down", "pushed in", "equal distance" - focus on measurable parameters
 - Focus on measurable physical parameters that sensors can detect
 - Use actual numerical values from the documentation specifications
 
@@ -1032,7 +1071,7 @@ VALID IoT METRICS EXAMPLES:
 INVALID METRICS (DO NOT USE):
 - bolt_status, alignment_status, installation_status, position_status, etc.
 
-Do not include any text before or after the JSON object."""
+Provide the JSON response."""
         
         user_prompt = f"""Based on the following technical documentation, generate comprehensive IoT monitoring rules:
 
@@ -1055,18 +1094,18 @@ CRITICAL: The documentation includes tables with specific IoT monitoring data. U
 
 Pay special attention to any tables containing technical specifications, operating parameters, or monitoring data as these contain the most relevant IoT monitoring information.
 
-CRITICAL IoT MONITORING REQUIREMENTS:
-- ONLY create rules for SENSOR-MEASURABLE parameters that IoT devices can monitor
+IoT MONITORING REQUIREMENTS:
+- Create rules for sensor-measurable parameters that IoT devices can monitor
 - Extract actual numerical values from tables, specifications, and technical data
 - Use specific numbers with units (e.g., "75°C", "1500 N", "85%", "220 V", "50 Hz")
 - Create precise threshold conditions with real numbers from the documentation
 - Focus on physical parameters that can be measured by sensors
-- DO NOT create rules for mechanical states, positions, or installation status
+- Focus on sensor-measurable parameters rather than mechanical states, positions, or installation status
 
 VALID SENSOR METRICS TO USE:
 - Temperature, pressure, voltage, current, speed, vibration, frequency, power, flow rate, level, humidity, torque, force, etc.
 
-Return ONLY the JSON object with the rules array."""
+Provide the JSON object with the rules array."""
         
         try:
             # Get rules model configuration
@@ -1158,7 +1197,7 @@ Return ONLY the JSON object with the rules array."""
 
 IMPORTANT: The provided documentation includes complete technical data, tables, specifications, and detailed information. Use all available data to create comprehensive safety guidelines.
 
-CRITICAL: You must respond with ONLY a valid JSON object with this exact structure:
+Please respond with a JSON object using this structure:
 {
   "safety_precautions": [
     {
@@ -1192,7 +1231,7 @@ CRITICAL: You must respond with ONLY a valid JSON object with this exact structu
   ]
 }
 
-Do not include any text before or after the JSON object."""
+Provide the JSON response."""
         
         user_prompt = f"""Based on the following technical documentation, generate comprehensive safety information:
 
@@ -1226,7 +1265,7 @@ IMPORTANT: Use specific numerical values from the documentation for:
 - Distance requirements (e.g., "2 meters", "6 feet")
 - Time limits and durations from safety procedures
 
-Return ONLY the JSON object with safety_precautions and safety_information arrays."""
+Provide the JSON object with safety_precautions and safety_information arrays."""
         
         try:
             # Get safety model configuration
@@ -1298,7 +1337,8 @@ Return ONLY the JSON object with safety_precautions and safety_information array
                     "processing_stages": ["initial_query"],
                     "confidence_score": 0.0,
                     "suggested_images": [],
-                    "images_used_for_response": []
+                    "images_used_for_response": [],
+                    "image_reference_mapping": {}
                 }
             
             # Stage 2: Assess information sufficiency
@@ -1417,7 +1457,8 @@ Return ONLY the JSON object with safety_precautions and safety_information array
                 "confidence_score": 0.0,
                 "error": str(e),
                 "suggested_images": [],
-                "images_used_for_response": []
+                "images_used_for_response": [],
+                "image_reference_mapping": {}
             }
 
     async def evaluate_response_quality(self, response: Dict[str, Any], query: str, assessment: Dict[str, Any]) -> Dict[str, Any]:
@@ -1530,7 +1571,7 @@ Return ONLY the JSON object with safety_precautions and safety_information array
 
 IMPORTANT: The provided documentation includes tables, specifications, and detailed technical data. Use this information to create precise maintenance schedules.
 
-CRITICAL: You must respond with ONLY a valid JSON object with this exact structure:
+Please respond with a JSON object using this structure:
 {
   "maintenance_tasks": [
     {
@@ -1547,7 +1588,7 @@ CRITICAL: You must respond with ONLY a valid JSON object with this exact structu
   ]
 }
 
-Do not include any text before or after the JSON object."""
+Provide the JSON response."""
         
         user_prompt = f"""Based on the following technical documentation, generate a comprehensive maintenance schedule:
 
@@ -1571,7 +1612,7 @@ CRITICAL: The documentation includes tables with specific maintenance data. Use 
 
 Pay special attention to any tables labeled as "maintenance list", "maintenance tasks", "maintenance schedules", or "maintenance procedure" as these contain the most relevant data.
 
-Return ONLY the JSON object with the maintenance_tasks array."""
+Provide the JSON object with the maintenance_tasks array."""
         
         try:
             # Get maintenance model configuration
