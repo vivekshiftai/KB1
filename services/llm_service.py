@@ -463,6 +463,8 @@ Respond with JSON:
         chunk_data_with_images = []
         all_available_images = []  # Collect all image names for LLM suggestions
         
+        logger.info(f"Starting to process {len(chunks)} chunks for context preparation")
+        
         for chunk in chunks:
             try:
                 # Filter content based on table needs - now returns dict with text, images, tables
@@ -473,6 +475,8 @@ Respond with JSON:
                     text_content = content_data.get("text", "")
                     images = content_data.get("images", [])
                     tables = content_data.get("tables", [])
+                    
+                    logger.info(f"Processing chunk '{heading}': {len(text_content)} chars text, {len(images)} images, {len(tables)} tables")
                     
                     # Store chunk data with its associated images
                     chunk_data_with_images.append({
@@ -486,6 +490,7 @@ Respond with JSON:
                     for img in images:
                         if img['filename'] not in all_available_images:
                             all_available_images.append(img['filename'])
+                            logger.info(f"Added image '{img['filename']}' to available images list")
                     
                     # Add text content to context
                     context_parts.append(f"**{heading}**\n{text_content}")
@@ -496,13 +501,15 @@ Respond with JSON:
                         for table in tables:
                             context_parts.append(f"**Table in {heading}:**\n{table}")
                 else:
-                    logger.warning(f"Skipping chunk with no content")
+                    logger.warning(f"Skipping chunk with no content: {chunk.get('metadata', {}).get('heading', 'Unknown')}")
             except Exception as e:
-                logger.warning(f"Error processing chunk: {str(e)}")
+                chunk_heading = chunk.get('metadata', {}).get('heading', 'Unknown') if isinstance(chunk, dict) else 'Unknown'
+                logger.error(f"Error processing chunk '{chunk_heading}': {str(e)}")
                 continue
         
         if not context_parts:
-            logger.warning("No valid context could be extracted from chunks")
+            logger.error("No valid context could be extracted from chunks")
+            logger.error(f"Processed {len(chunks)} chunks, found {len(chunk_data_with_images)} valid chunks with content")
             return {
                 "response": f"I couldn't extract meaningful content from the provided chunks for '{query}'.",
                 "chunks_used": []
@@ -510,28 +517,41 @@ Respond with JSON:
         
         context = "\n\n".join(context_parts)
         
+        logger.info(f"Context preparation complete: {len(context_parts)} context sections, {len(all_available_images)} total images")
+        logger.info(f"All available images: {all_available_images}")
+        
         # Enhanced prompt for structured JSON response
         table_info = "Full documentation data including tables, specifications, and all technical details has been included in the context for comprehensive analysis."
         
         # Create numbered image list for LLM context
         image_context = ""
         total_images = sum(len(chunk["images"]) for chunk in chunk_data_with_images)
+        logger.info(f"Total images across all chunks: {total_images}")
+        
         if total_images > 0:
             # Create numbered list of available images for LLM
             numbered_image_list = []
             image_counter = 1
             for img_filename in all_available_images:
-                numbered_image_list.append(f"image {image_counter}: {img_filename}")
+                numbered_entry = f"image {image_counter}: {img_filename}"
+                numbered_image_list.append(numbered_entry)
+                logger.info(f"Created numbered reference: {numbered_entry}")
                 image_counter += 1
             
             image_list_text = ", ".join(numbered_image_list)
+            logger.info(f"Complete numbered image list for LLM: {image_list_text}")
             image_context = f"""
 
-IMAGES AVAILABLE: {total_images} images are provided with this documentation. Each image is numbered for easy reference.
+VISUAL CONTENT: {total_images} images are provided with this documentation for visual analysis. Each image contains important visual information that complements the text.
 
 Available images: {image_list_text}
 
-You can reference images by their number (e.g., 'as shown in image 1', 'see image 2') and suggest them using their numbered names."""
+Please examine these images carefully and use them to:
+- Identify specific controls, buttons, screens, or equipment shown
+- Provide visual context for procedures and instructions
+- Reference specific visual elements when explaining steps
+- Enhance your answer with details visible in the images
+- Use natural references like "as shown in image 1", "refer to image 2", "see image 3" """
         
         # Add query analysis information if available
         analysis_info = ""
@@ -549,19 +569,27 @@ Query Analysis:
 - Reasoning: {reasoning}
 """
         
-        system_prompt = f"""You are a technical documentation assistant. Answer questions using the provided documentation.
+        system_prompt = f"""You are a technical documentation assistant with visual analysis capabilities. Answer questions using both the provided text documentation and the accompanying images.
 
 {table_info}{image_context}{analysis_info}
 
-Please format your response with:
-- **bold** for main headings
-- Numbered steps (1., 2., 3., etc.)
-- Bullet points for sub-items
-- Line breaks between sections
+Instructions for comprehensive responses:
+- Analyze both the text content and the images provided
+- Use the images to enhance your understanding and provide more complete answers
+- Reference images naturally when they support your explanation (e.g., "as shown in image 1", "refer to image 2")
+- Combine information from text and images to provide thorough, actionable guidance
+- When images show important details, controls, or procedures, mention them in your response
+
+Response formatting:
+- Use **bold** for main headings
+- Use numbered steps (1., 2., 3., etc.)
+- Use bullet points for sub-items
+- Add line breaks between sections
+- Reference images when they add value to the explanation
 
 Respond in JSON format:
 {{
-    "response": "Your formatted answer with \\n for line breaks and **bold** headings",
+    "response": "Your comprehensive answer combining text and visual information with \\n for line breaks and **bold** headings",
     "chunks_used": ["section headings you referenced"],
     "suggested_images": ["image 1", "image 2"]
 }}"""
@@ -587,20 +615,39 @@ Please ensure your response addresses all aspects of the original query comprehe
             
             image_info = f"""
 
-IMAGES PROVIDED: {total_images} images are included with this documentation.
+VISUAL ANALYSIS REQUIRED: {total_images} images are provided for you to analyze and incorporate into your answer.
 
 Available images: {", ".join(numbered_image_list)}
 
-Reference images by their number (e.g., 'as shown in image 1', 'see image 2'). In the suggested_images field, use the numbered names (e.g., 'image 1', 'image 2') for images most relevant to your response."""
+Important: These images contain crucial visual information. Please:
+- Examine each image to understand what it shows (controls, screens, equipment, procedures)
+- Incorporate visual details into your answer where relevant
+- Reference images naturally (e.g., "as shown in image 1", "refer to image 2", "see the control panel in image 3")
+- Use the images to provide more specific and actionable guidance
+- In the suggested_images field, include the numbered names of images you referenced or that are essential for understanding your answer"""
         
         user_prompt = f"""Documentation:
 {context}
 
 Question: {query}{analysis_guidance}{image_info}
 
-Please answer this question using the documentation provided. Include specific steps and procedures. Reference images when helpful (e.g., "as shown in image 1").
+Please provide a comprehensive answer by carefully analyzing both the text documentation and all the images provided.
 
-In the suggested_images field, include the numbered image names (e.g., "image 1", "image 2") that are most relevant to your answer."""
+Visual Analysis Instructions:
+- Examine each image thoroughly to understand what it depicts (control panels, screens, buttons, equipment, diagrams)
+- Look for visual elements that support or illustrate the text instructions
+- Identify specific controls, indicators, or interface elements shown in the images
+- Use the visual information to provide more detailed and specific guidance
+- Reference images naturally throughout your answer when they add clarity
+
+Response Enhancement Guidelines:
+- When describing procedures, reference relevant images (e.g., "Press the Start button as shown in image 1")
+- When mentioning controls or screens, point to the corresponding image (e.g., "Navigate to the Recipe screen (refer to image 2)")
+- Include visual details that help users identify what they're looking for
+- Combine text instructions with visual references for maximum clarity
+- Make your answer actionable by using both written steps and visual guidance
+
+In the suggested_images field, include the numbered image names (e.g., "image 1", "image 2") that you referenced in your answer or that are essential for understanding the procedures."""
         
         try:
             # Get query model configuration
@@ -611,17 +658,23 @@ In the suggested_images field, include the numbered image names (e.g., "image 1"
                 # Prepare multi-modal content with chunks and their associated images
                 user_content = [{"type": "text", "text": user_prompt}]
                 
+                logger.info("Starting to prepare multi-modal content for LLM request")
+                
                 # Add images from each chunk with their associated text
                 image_counter = 1
                 images_used_for_response = []  # Track images used in response generation (as "image 1", "image 2", etc.)
                 image_reference_mapping = {}  # Map "image 1" -> actual filename
                 
+                logger.info(f"Processing {len(chunk_data_with_images)} chunks with images for LLM request")
+                
                 for chunk_data in chunk_data_with_images:
                     if chunk_data["images"]:
-                        # Add a separator for this chunk's images
+                        logger.info(f"Adding {len(chunk_data['images'])} images from chunk '{chunk_data['heading']}'")
+                        
+                        # Add a separator for this chunk's images with analysis instructions
                         user_content.append({
                             "type": "text", 
-                            "text": f"\n\n--- Images for '{chunk_data['heading']}' ---"
+                            "text": f"\n\n--- Visual Content for '{chunk_data['heading']}' ---\nPlease analyze the following images carefully. Look for controls, buttons, screens, indicators, and any visual elements that support the text content."
                         })
                         
                         # Add each image from this chunk
@@ -639,7 +692,14 @@ In the suggested_images field, include the numbered image names (e.g., "image 1"
                             image_reference_mapping[image_reference] = img['filename']
                             
                             logger.info(f"Added {image_reference} to LLM request: {img['filename']} (from chunk: {chunk_data['heading']})")
+                            logger.info(f"Image mapping created: {image_reference} -> {img['filename']}")
                             image_counter += 1
+                
+                logger.info(f"Multi-modal content preparation complete:")
+                logger.info(f"- Total content items: {len(user_content)}")
+                logger.info(f"- Images sent to LLM: {len(images_used_for_response)}")
+                logger.info(f"- Image reference mapping: {image_reference_mapping}")
+                logger.info(f"- Images used for response: {images_used_for_response}")
                 
                 response = self.client.complete(
                     messages=[
@@ -656,12 +716,15 @@ In the suggested_images field, include the numbered image names (e.g., "image 1"
             
             raw_response = response.choices[0].message.content.strip()
             logger.info(f"Raw LLM response using {model_config['name']}: {raw_response[:200]}...")
+            logger.info(f"Full raw response length: {len(raw_response)} characters")
             
             # Try to parse JSON response
             try:
                 # Clean the response to extract JSON
                 json_start = raw_response.find('{')
                 json_end = raw_response.rfind('}') + 1
+                
+                logger.info(f"JSON extraction: start={json_start}, end={json_end}")
                 
                 if json_start != -1 and json_end > json_start:
                     json_str = raw_response[json_start:json_end]
@@ -675,6 +738,7 @@ In the suggested_images field, include the numbered image names (e.g., "image 1"
                     json_str = json_str.replace('\r', '')
                     
                     parsed_response = json.loads(json_str)
+                    logger.info(f"Successfully parsed JSON response with keys: {list(parsed_response.keys())}")
                     
                     # Handle nested response structure (LLM sometimes returns {"response": {"question": "answer"}})
                     if "response" in parsed_response and isinstance(parsed_response["response"], dict):
@@ -1307,11 +1371,15 @@ Provide the JSON object with safety_precautions and safety_information arrays.""
         try:
             # Stage 1: Initial query to get base chunks
             logger.info(f"Stage 1: Getting initial chunks from collection: {collection_name}")
+            logger.info(f"Initial query: '{query}' with top_k=5")
+            
             initial_chunks = await vector_db.query_chunks(
                 collection_name=collection_name,
                 query=query,
                 top_k=5
             )
+            
+            logger.info(f"Stage 1 complete: Retrieved {len(initial_chunks)} initial chunks")
             
             if not initial_chunks:
                 logger.warning("No initial chunks found")

@@ -151,7 +151,10 @@ class LangGraphQueryProcessor:
         """Process query using LangGraph workflow"""
         start_time = time.time()
         
-        logger.info(f"Starting LangGraph query processing for: {request.query}")
+        logger.info(f"=== STARTING LANGGRAPH QUERY PROCESSING ===")
+        logger.info(f"Query: {request.query}")
+        logger.info(f"PDF: {request.pdf_name}")
+        logger.info(f"Top-k: {request.top_k}")
         
         # Initialize state
         initial_state = {
@@ -181,9 +184,16 @@ class LangGraphQueryProcessor:
         try:
             # Execute the workflow
             config = {"configurable": {"thread_id": f"query_{int(time.time())}"}}
+            logger.info(f"Executing LangGraph workflow with config: {config}")
+            
             final_state = await self.graph.ainvoke(initial_state, config=config)
             
-            logger.info(f"LangGraph query processing completed in {final_state['processing_time']}")
+            logger.info(f"=== LANGGRAPH QUERY PROCESSING COMPLETED ===")
+            logger.info(f"Total processing time: {final_state['processing_time']}")
+            logger.info(f"Final response success: {final_state['final_response'].success}")
+            logger.info(f"Images in final response: {len(final_state['final_response'].images)}")
+            logger.info(f"Suggested images: {final_state['final_response'].suggested_images}")
+            
             return final_state["final_response"]
             
         except Exception as e:
@@ -203,7 +213,9 @@ class LangGraphQueryProcessor:
     
     def _initialize_query(self, state: QueryState) -> QueryState:
         """Initialize query processing"""
-        logger.info(f"Initializing query processing - Iteration {state['iteration'] + 1}")
+        logger.info(f"=== STAGE: INITIALIZE QUERY ===")
+        logger.info(f"Iteration: {state['iteration'] + 1}")
+        logger.info(f"Collection: {state['collection_name']}")
         
         # Check if collection exists
         if not self.vector_db.collection_exists(state["collection_name"]):
@@ -366,7 +378,9 @@ Multiple: {{"is_single_question": false, "question_count": 2, "individual_questi
     
     async def _generate_llm_response(self, state: QueryState) -> QueryState:
         """Generate LLM response from combined chunks for original user query"""
-        logger.info("Generating LLM response for original user query")
+        logger.info(f"=== STAGE: GENERATE LLM RESPONSE ===")
+        logger.info(f"Processing query: {state['original_query']}")
+        logger.info(f"Available chunks: {len(state.get('current_chunks', []))}")
         
         try:
             if not state["current_chunks"]:
@@ -603,7 +617,12 @@ Please decide:
     
     def _finalize_response(self, state: QueryState) -> QueryState:
         """Finalize the response and collect images/tables"""
-        logger.info("Finalizing response")
+        logger.info(f"=== STAGE: FINALIZE RESPONSE ===")
+        logger.info(f"LLM response keys: {list(state['llm_response'].keys())}")
+        logger.info(f"Response text length: {len(state['llm_response'].get('response', ''))}")
+        logger.info(f"Chunks used: {state['llm_response'].get('chunks_used', [])}")
+        logger.info(f"Suggested images: {state['llm_response'].get('suggested_images', [])}")
+        logger.info(f"Image reference mapping: {state['llm_response'].get('image_reference_mapping', {})}")
         
         try:
             # Collect images and tables from used chunks (keep original behavior)
@@ -708,16 +727,46 @@ Please decide:
                 logger.info(f"Found {len(embedded_images)} images in chunk '{chunk_heading}'")
                 for img in embedded_images:
                     if hasattr(img, 'filename'):
-                        filename = img.filename
+                        original_filename = img.filename
                     else:
-                        filename = str(img)
+                        original_filename = str(img)
                     
-                    if filename not in seen_image_filenames:
-                        images.append(img)
-                        seen_image_filenames.add(filename)
-                        logger.info(f"Added image: {filename} from chunk '{chunk_heading}'")
+                    if original_filename not in seen_image_filenames:
+                        # Find the numbered name for this image from the mapping
+                        numbered_name = None
+                        for num_name, mapped_filename in image_reference_mapping.items():
+                            if mapped_filename == original_filename:
+                                numbered_name = num_name
+                                break
+                        
+                        if numbered_name:
+                            # Create a copy of the image with the numbered filename
+                            if hasattr(img, 'filename'):
+                                # Create new ImageData object with numbered filename
+                                from models.schemas import ImageData
+                                numbered_img = ImageData(
+                                    filename=f"{numbered_name}.jpg",  # e.g., "image 1.jpg"
+                                    data=img.data,
+                                    mime_type=img.mime_type,
+                                    size=img.size
+                                )
+                                images.append(numbered_img)
+                                logger.info(f"Added image: {original_filename} as '{numbered_name}.jpg' from chunk '{chunk_heading}'")
+                            else:
+                                # Handle dict format
+                                numbered_img = img.copy() if isinstance(img, dict) else img
+                                if isinstance(numbered_img, dict):
+                                    numbered_img['filename'] = f"{numbered_name}.jpg"
+                                images.append(numbered_img)
+                                logger.info(f"Added image: {original_filename} as '{numbered_name}.jpg' from chunk '{chunk_heading}'")
+                        else:
+                            # No mapping found, use original
+                            images.append(img)
+                            logger.warning(f"No numbered mapping found for {original_filename}, using original filename")
+                        
+                        seen_image_filenames.add(original_filename)
                     else:
-                        logger.info(f"Skipped duplicate image: {filename}")
+                        logger.info(f"Skipped duplicate image: {original_filename}")
             
             # Only collect tables from referenced chunks
             chunk_is_referenced = False
@@ -768,9 +817,36 @@ Please decide:
                             filename = str(img)
                         
                         if filename in missing_images and filename not in seen_image_filenames:
-                            images.append(img)
+                            # Find the numbered name for this missing image
+                            numbered_name = None
+                            for num_name, mapped_filename in image_reference_mapping.items():
+                                if mapped_filename == filename:
+                                    numbered_name = num_name
+                                    break
+                            
+                            if numbered_name:
+                                # Create numbered image
+                                if hasattr(img, 'filename'):
+                                    from models.schemas import ImageData
+                                    numbered_img = ImageData(
+                                        filename=f"{numbered_name}.jpg",
+                                        data=img.data,
+                                        mime_type=img.mime_type,
+                                        size=img.size
+                                    )
+                                    images.append(numbered_img)
+                                    logger.info(f"Found missing image: {filename} as '{numbered_name}.jpg' in chunk '{chunk_heading}'")
+                                else:
+                                    numbered_img = img.copy() if isinstance(img, dict) else img
+                                    if isinstance(numbered_img, dict):
+                                        numbered_img['filename'] = f"{numbered_name}.jpg"
+                                    images.append(numbered_img)
+                                    logger.info(f"Found missing image: {filename} as '{numbered_name}.jpg' in chunk '{chunk_heading}'")
+                            else:
+                                images.append(img)
+                                logger.info(f"Found missing image: {filename} (no numbered mapping) in chunk '{chunk_heading}'")
+                            
                             seen_image_filenames.add(filename)
-                            logger.info(f"Found missing image: {filename} in chunk '{chunk_heading}'")
                             missing_images.remove(filename)
             
             if missing_images:
