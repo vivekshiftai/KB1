@@ -125,17 +125,40 @@ class LLMService:
             
             # Patterns to remove chunks used and visual references sections
             patterns_to_remove = [
-                r'\n\n\*\*Chunks Used:\*\*.*?(?=\n\n|\Z)',  # Remove "Chunks Used:" section
-                r'\n\n\*\*Visual References:\*\*.*?(?=\n\n|\Z)',  # Remove "Visual References:" section
-                r'\n\n\*\*Suggested Images:\*\*.*?(?=\n\n|\Z)',  # Remove "Suggested Images:" section
-                r'\nChunks Used:.*?(?=\n\n|\Z)',  # Remove "Chunks Used:" without bold
-                r'\nVisual References:.*?(?=\n\n|\Z)',  # Remove "Visual References:" without bold
-                r'\nSuggested Images:.*?(?=\n\n|\Z)',  # Remove "Suggested Images:" without bold
-                r'Chunks Used:\s*\n.*?(?=\n\n|\Z)',  # Remove "Chunks Used:" with list
-                r'Visual References:\s*\n.*?(?=\n\n|\Z)',  # Remove "Visual References:" with list
-                r'Suggested Images:\s*\n.*?(?=\n\n|\Z)',  # Remove "Suggested Images:" with list
-                r'\*\*Suggested Images:\*\*\s*$',  # Remove standalone "**Suggested Images:**" at end
-                r'Suggested Images:\s*$',  # Remove standalone "Suggested Images:" at end
+                # Bold sections
+                r'\n\n\*\*Chunks Used:\*\*.*?(?=\n\n|\Z)',
+                r'\n\n\*\*Visual References:\*\*.*?(?=\n\n|\Z)',
+                r'\n\n\*\*Suggested Images:\*\*.*?(?=\n\n|\Z)',
+                r'\n\n\*\*References:\*\*.*?(?=\n\n|\Z)',
+                r'\n\n\*\*Sources:\*\*.*?(?=\n\n|\Z)',
+                
+                # Regular sections
+                r'\nChunks Used:.*?(?=\n\n|\Z)',
+                r'\nVisual References:.*?(?=\n\n|\Z)',
+                r'\nSuggested Images:.*?(?=\n\n|\Z)',
+                r'\nReferences:.*?(?=\n\n|\Z)',
+                r'\nSources:.*?(?=\n\n|\Z)',
+                
+                # With lists
+                r'Chunks Used:\s*\n.*?(?=\n\n|\Z)',
+                r'Visual References:\s*\n.*?(?=\n\n|\Z)',
+                r'Suggested Images:\s*\n.*?(?=\n\n|\Z)',
+                r'References:\s*\n.*?(?=\n\n|\Z)',
+                r'Sources:\s*\n.*?(?=\n\n|\Z)',
+                
+                # Standalone at end
+                r'\*\*Chunks Used:\*\*\s*$',
+                r'\*\*Visual References:\*\*\s*$',
+                r'\*\*Suggested Images:\*\*\s*$',
+                r'\*\*References:\*\*\s*$',
+                r'Chunks Used:\s*$',
+                r'Visual References:\s*$',
+                r'Suggested Images:\s*$',
+                r'References:\s*$',
+                
+                # Image reference patterns that might appear
+                r'Image \d+:.*?(?=\n\n|\Z)',
+                r'- Image \d+:.*?(?=\n\n|\Z)',
             ]
             
             cleaned_text = response_text
@@ -329,31 +352,21 @@ class LLMService:
         
         context = "\n\n".join(context_parts)
         
-        assessment_prompt = f"""Please analyze if you have sufficient information to answer the user's question completely.
+        assessment_prompt = f"""Analyze if you have sufficient information to answer this question.
 
 Available Information:
 {context}
 
 User Question: {query}
 
-Please respond with a JSON object using this structure:
+Respond with JSON:
 {{
     "has_sufficient_info": true/false,
-    "missing_information": ["list of specific missing information"],
-    "additional_queries_needed": ["specific search terms for missing info"],
+    "missing_information": ["list of missing info"],
+    "additional_queries_needed": ["search terms for missing info"],
     "confidence_score": 0.0-1.0,
-    "reasoning": "brief explanation of assessment"
-}}
-
-Consider these factors:
-- Can you provide a complete, actionable answer?
-- Do you have all necessary steps, procedures, or details?
-- Are there any information gaps?
-- Can you include specific values, measurements, and technical details?
-
-If information is missing, suggest specific search terms that would help find the missing details.
-
-Provide the JSON response."""
+    "reasoning": "brief explanation"
+}}"""
         
         try:
             # Get analysis model configuration
@@ -529,41 +542,22 @@ Query Analysis:
 - Reasoning: {reasoning}
 """
         
-        system_prompt = f"""You are a technical documentation assistant. Provide complete, actionable answers based on the documentation.
+        system_prompt = f"""You are a technical documentation assistant. Answer questions using the provided documentation.
 
-Context: {table_info}{image_context}{analysis_info}
+{table_info}{image_context}{analysis_info}
 
-Response requirements:
-- Include the actual content from the documentation instead of saying "see section X" or "refer to chapter Y"
-- Provide specific details, steps, and procedures directly in your answer
-- If information is missing, state "This information is not available in the provided documentation"
-- Focus on giving users practical, actionable information
-- Your response should contain only the answer content, without mentioning which chunks or sections you used
-- Avoid adding metadata sections like "Chunks Used:" or "Visual References:" to your response text
-- End your response with the actual content rather than metadata sections
+Please format your response with:
+- **bold** for main headings
+- Numbered steps (1., 2., 3., etc.)
+- Bullet points for sub-items
+- Line breaks between sections
 
-Response formatting:
-- Use **bold** for main headings
-- Use numbered steps (1., 2., 3., etc.)
-- Put each step on a new line
-- Use bullet points for sub-items
-- Add line breaks between sections
-
-Required JSON format:
+Respond in JSON format:
 {{
-    "response": "Your formatted answer with line breaks and **bold** headings",
-    "chunks_used": ["section headings you used"],
-    "suggested_images": ["image1.png", "image2.jpg"]
-}}
-
-Example response:
-{{
-    "response": "**Maintenance Procedures**\\n1. Check conveyor belts weekly\\n2. Replace brushes as needed\\n\\n**Daily Care:**\\n• Clean the scraper and rollers\\n• Clean the synthetic conveyor belt\\n\\n**Weekly Care:**\\n• Clean the roller head and machine base\\n• Clean the driving and idle rollers",
-    "chunks_used": ["Maintenance Procedures"],
-    "suggested_images": ["maintenance_belt.jpg", "roller_cleaning.png"]
-}}
-
-Please provide only the JSON object in your response."""
+    "response": "Your formatted answer with \\n for line breaks and **bold** headings",
+    "chunks_used": ["section headings you referenced"],
+    "suggested_images": ["relevant_image_filenames.jpg"]
+}}"""
         
         # Add query analysis guidance if available
         analysis_guidance = ""
@@ -592,20 +586,9 @@ For the suggested_images field, select the most relevant image filenames from th
 
 Question: {query}{analysis_guidance}{image_info}
 
-Please provide a complete answer using the documentation above. Include specific details, steps, and procedures directly from the documentation. Format your response with numbered steps and bold headings for clarity. 
+Please answer this question using the documentation provided. Include specific steps and procedures. Reference images when helpful (e.g., "as shown in image 1").
 
-When you reference images in your response text (e.g., "as shown in image 1"), make sure to include those same images in the suggested_images field using their actual filenames.
-
-Important: Your response should contain only the answer content. Avoid including sections like "Chunks Used:" or "Suggested Images:" in the response text itself.
-
-Return your response in this JSON format:
-{{
-    "response": "Your answer with \\n for line breaks and **bold** headings",
-    "chunks_used": ["section headings"],
-    "suggested_images": ["relevant_image_names.jpg"]
-}}
-
-In the suggested_images field, include the filenames of images that are most relevant to your response and that you reference in your answer text."""
+In the suggested_images field, include the filenames of images that are most relevant to your answer."""
         
         try:
             # Get query model configuration
@@ -827,18 +810,16 @@ In the suggested_images field, include the filenames of images that are most rel
     async def _get_analysis_response(self, prompt: str) -> str:
         """Get analysis response from LLM for query analysis"""
         try:
-            system_prompt = """You are an expert at analyzing user queries and breaking them down into individual questions. 
+            system_prompt = """Analyze user queries and break them down into individual questions.
 
-Please respond with a JSON object using this structure:
+Respond with JSON:
 {
   "is_single_question": true/false,
   "question_count": number,
   "individual_questions": ["question1", "question2"],
   "complexity": "simple/moderate/complex",
   "reasoning": "brief explanation"
-}
-
-Provide only the JSON response."""
+}"""
             
             # Get analysis model configuration
             model_config = self._get_model_config("analysis")
@@ -1036,9 +1017,7 @@ Provide only the JSON response."""
         
         context = "\n\n".join(context_parts)
         
-        system_prompt = """You are an expert in IoT monitoring and industrial automation. Your task is to analyze technical documentation and generate comprehensive IoT monitoring rules.
-
-IMPORTANT: The provided documentation includes complete technical data, tables, specifications, and detailed information. Use all available data to create precise monitoring rules.
+        system_prompt = """You are an expert in IoT monitoring and industrial automation. Generate IoT monitoring rules from technical documentation.
 
 Please respond with a JSON object using this structure:
 {
@@ -1193,9 +1172,7 @@ Provide the JSON object with the rules array."""
         
         context = "\n\n".join(context_parts)
         
-        system_prompt = """You are a safety expert specializing in industrial equipment and machinery safety. Your task is to analyze technical documentation and generate comprehensive safety information.
-
-IMPORTANT: The provided documentation includes complete technical data, tables, specifications, and detailed information. Use all available data to create comprehensive safety guidelines.
+        system_prompt = """You are a safety expert specializing in industrial equipment and machinery safety. Generate safety information from technical documentation.
 
 Please respond with a JSON object using this structure:
 {
@@ -1567,9 +1544,7 @@ Provide the JSON object with safety_precautions and safety_information arrays.""
         
         context = "\n\n".join(context_parts)
         
-        system_prompt = """You are a maintenance expert specializing in industrial equipment and machinery maintenance. Your task is to analyze technical documentation and generate comprehensive maintenance schedules.
-
-IMPORTANT: The provided documentation includes tables, specifications, and detailed technical data. Use this information to create precise maintenance schedules.
+        system_prompt = """You are a maintenance expert specializing in industrial equipment and machinery maintenance. Generate maintenance schedules from technical documentation.
 
 Please respond with a JSON object using this structure:
 {
