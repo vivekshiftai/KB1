@@ -636,20 +636,24 @@ Please decide:
             image_reference_mapping = state["llm_response"].get("image_reference_mapping", {})
             
             if suggested_images and len(suggested_images) < len(all_images):
-                # Filter to return only suggested images
+                # Filter to return only suggested images and validate their relevance
                 suggested_image_data = []
+                filtered_suggestions = self._filter_relevant_suggestions(suggested_images, state)
+                
                 for img in all_images:
                     img_filename = img.filename if hasattr(img, 'filename') else str(img)
-                    # Check if this image corresponds to a suggested image
-                    for suggested_ref in suggested_images:
+                    # Check if this image corresponds to a filtered suggested image
+                    for suggested_ref in filtered_suggestions:
                         expected_filename = f"{suggested_ref}.jpg"
                         if img_filename == expected_filename:
                             suggested_image_data.append(img)
                             break
                 
-                logger.info(f"LLM suggested {len(suggested_images)} relevant images out of {len(all_images)} available")
-                logger.info(f"Returning {len(suggested_image_data)} LLM-suggested images: {suggested_images}")
-                logger.info(f"Suggested image filenames: {[img.filename if hasattr(img, 'filename') else str(img) for img in suggested_image_data]}")
+                logger.info(f"LLM suggested {len(suggested_images)} images, filtered to {len(filtered_suggestions)} relevant images")
+                logger.info(f"Original suggestions: {suggested_images}")
+                logger.info(f"Filtered suggestions: {filtered_suggestions}")
+                logger.info(f"Returning {len(suggested_image_data)} filtered images")
+                logger.info(f"Final image filenames: {[img.filename if hasattr(img, 'filename') else str(img) for img in suggested_image_data]}")
                 images = suggested_image_data
             else:
                 logger.info(f"Returning all {len(all_images)} images (no specific suggestions or all images suggested)")
@@ -889,6 +893,74 @@ Please decide:
         logger.info(f"Final collection after missing image search: {len(images)} embedded images and {len(tables)} tables")
         
         return images, tables
+    
+    def _filter_relevant_suggestions(self, suggested_images: List[str], state: QueryState) -> List[str]:
+        """Filter suggested images to remove irrelevant ones like error codes or emergency symbols"""
+        try:
+            query = state.get("original_query", "").lower()
+            image_reference_mapping = state["llm_response"].get("image_reference_mapping", {})
+            
+            # Keywords that indicate the query is about errors, safety, or warnings
+            error_safety_keywords = [
+                "error", "warning", "alarm", "emergency", "safety", "fault", "alert", 
+                "code", "troubleshoot", "problem", "issue", "malfunction"
+            ]
+            
+            # Check if the query is about errors or safety
+            is_error_safety_query = any(keyword in query for keyword in error_safety_keywords)
+            
+            filtered_suggestions = []
+            
+            for suggested_image in suggested_images:
+                # Get the original filename to analyze
+                original_filename = image_reference_mapping.get(suggested_image, "")
+                
+                # Check if this appears to be an error/warning/emergency image
+                is_error_warning_image = any(keyword in original_filename.lower() for keyword in [
+                    "error", "warning", "alarm", "emergency", "danger", "caution", 
+                    "symbol", "sign", "code", "alert", "fault"
+                ])
+                
+                # Also check chunk headings for context
+                chunk_context = ""
+                current_chunks = state.get("current_chunks", [])
+                for chunk in current_chunks:
+                    if isinstance(chunk, dict):
+                        embedded_images = chunk.get("embedded_images", [])
+                        for img in embedded_images:
+                            img_filename = img.filename if hasattr(img, 'filename') else str(img)
+                            if img_filename == original_filename:
+                                chunk_heading = chunk.get("metadata", {}).get("heading", "").lower()
+                                chunk_context = chunk_heading
+                                break
+                
+                is_error_context = any(keyword in chunk_context for keyword in [
+                    "error", "warning", "alarm", "emergency", "safety", "sign", "symbol", "prohibited"
+                ])
+                
+                # Decision logic
+                if is_error_warning_image or is_error_context:
+                    if is_error_safety_query:
+                        # Query is about errors/safety, so include error/warning images
+                        filtered_suggestions.append(suggested_image)
+                        logger.info(f"Including error/safety image '{suggested_image}' for error/safety query")
+                    else:
+                        # Query is not about errors/safety, exclude error/warning images
+                        logger.info(f"Filtering out error/warning image '{suggested_image}' for non-safety query")
+                        logger.info(f"Image context: {chunk_context}, filename: {original_filename}")
+                else:
+                    # Regular procedural image, include it
+                    filtered_suggestions.append(suggested_image)
+                    logger.info(f"Including procedural image '{suggested_image}'")
+            
+            logger.info(f"Image filtering: {len(suggested_images)} suggested -> {len(filtered_suggestions)} filtered")
+            logger.info(f"Query type: {'error/safety' if is_error_safety_query else 'procedural'}")
+            
+            return filtered_suggestions
+            
+        except Exception as e:
+            logger.error(f"Error filtering image suggestions: {str(e)}")
+            return suggested_images  # Return original suggestions if filtering fails
     
     def _validate_suggested_images(self, state: QueryState) -> None:
         """Validate and log LLM suggested images for tracking purposes (doesn't change response)"""

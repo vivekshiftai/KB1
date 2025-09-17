@@ -187,6 +187,37 @@ class LLMService:
             logger.warning(f"Error cleaning response text: {str(e)}")
             return response_text
     
+    def _remove_hashtags(self, response_text: str) -> str:
+        """Remove markdown hashtags and convert to bold formatting"""
+        try:
+            import re
+            
+            # Convert hashtag headers to bold formatting
+            # Handle different levels of hashtags
+            patterns = [
+                (r'^####\s*(.+)$', r'**\1**'),  # #### Header -> **Header**
+                (r'^###\s*(.+)$', r'**\1**'),   # ### Header -> **Header**
+                (r'^##\s*(.+)$', r'**\1**'),    # ## Header -> **Header**
+                (r'^#\s*(.+)$', r'**\1**'),     # # Header -> **Header**
+                (r'\n####\s*(.+)$', r'\n**\1**'),  # Mid-text #### Header
+                (r'\n###\s*(.+)$', r'\n**\1**'),   # Mid-text ### Header
+                (r'\n##\s*(.+)$', r'\n**\1**'),    # Mid-text ## Header
+                (r'\n#\s*(.+)$', r'\n**\1**'),     # Mid-text # Header
+            ]
+            
+            cleaned_text = response_text
+            for pattern, replacement in patterns:
+                cleaned_text = re.sub(pattern, replacement, cleaned_text, flags=re.MULTILINE)
+            
+            if cleaned_text != response_text:
+                logger.info("Converted hashtag headers to bold formatting")
+            
+            return cleaned_text
+            
+        except Exception as e:
+            logger.warning(f"Error removing hashtags: {str(e)}")
+            return response_text
+    
     def _validate_suggested_images(self, suggested_images: List[str], available_images: List[str]) -> List[str]:
         """Validate suggested images against available images and log any issues"""
         try:
@@ -569,7 +600,13 @@ Please examine these images carefully and use them to:
 - Provide visual context for procedures and instructions
 - Reference specific visual elements when explaining steps
 - Enhance your answer with details visible in the images
-- Use natural references like "as shown in image 1", "refer to image 2", "see image 3" """
+- Use natural references like "as shown in image 1", "refer to image 2", "see image 3"
+
+Image selection guidelines:
+- Suggest images that show actual procedures, controls, or equipment relevant to the question
+- Avoid suggesting error code charts, warning symbols, or emergency indicators unless specifically asked about errors or safety
+- Focus on procedural images that help users complete the task
+- Be selective - only suggest images that directly support your answer"""
         
         # Add query analysis information if available
         analysis_info = ""
@@ -606,18 +643,21 @@ Response quality standards:
 - Focus on providing practical, implementable guidance
 
 Response formatting:
-- Use **bold** for main headings
+- Use **bold** for main headings (not hashtags like # or ##)
 - Use numbered steps (1., 2., 3., etc.)
-- Use bullet points for sub-items
+- Use bullet points for sub-items (• or -)
 - Add line breaks between sections
 - Reference images when they support the explanation
+- Avoid markdown hashtags (#, ##, ###, ####) in your response
 
 Respond in JSON format:
 {{
-    "response": "Your complete, self-contained answer with all necessary details",
+    "response": "**Main Heading**\\n\\n1. First step with details\\n2. Second step with details\\n\\n**Sub-heading**\\n• Bullet point\\n• Another bullet point",
     "chunks_used": ["section headings you referenced"],
     "suggested_images": ["image 1", "image 2"]
-}}"""
+}}
+
+Important: Use **bold** for headings, not hashtags. Format should be clean and professional without markdown hashtags."""
         
         # Add query analysis guidance if available
         analysis_guidance = ""
@@ -649,7 +689,13 @@ Important: These images contain crucial visual information. Please:
 - Incorporate visual details into your answer where relevant
 - Reference images naturally (e.g., "as shown in image 1", "refer to image 2", "see the control panel in image 3")
 - Use the images to provide more specific and actionable guidance
-- In the suggested_images field, include the numbered names of images you referenced or that are essential for understanding your answer"""
+
+Image suggestion rules:
+- In the suggested_images field, include ONLY images that directly help answer this specific question
+- Avoid suggesting error code tables, warning symbols, or emergency indicators unless the query is about errors or safety
+- Focus on images showing procedures, controls, or equipment relevant to the user's task
+- Be highly selective - suggest only images that provide practical value for this specific query
+- If error codes are mentioned, include the code details in text rather than suggesting error code images"""
         
         user_prompt = f"""Documentation:
 {context}
@@ -668,14 +714,18 @@ Visual Analysis Instructions:
 Image analysis and suggestions:
 - Examine each image to identify relevant visual elements for this specific query
 - Reference images naturally when they support your explanation (e.g., "as shown in image 1")
-- In the suggested_images field, include ONLY the numbered image names that are directly relevant to answering the user's question
-- Focus on images that show the specific procedures, controls, or equipment mentioned in your answer
+- In the suggested_images field, include ONLY images that directly help answer the user's question
+- Avoid suggesting error code images, warning symbols, or emergency indicators unless the query specifically asks about errors or safety
+- Focus on images showing actual procedures, controls, equipment, or steps mentioned in your answer
+- Be selective - suggest only images that add practical value to understanding the response
 
 Quality requirements:
 - Every step must be complete and actionable
 - Include specific details from the documentation
 - Combine text instructions with relevant visual references
-- Provide practical, implementable guidance without section references"""
+- Provide practical, implementable guidance without section references
+- Use **bold** formatting for headings, not hashtags (#, ##, ###)
+- Format with proper line breaks and bullet points"""
         
         try:
             # Get query model configuration
@@ -849,8 +899,9 @@ Quality requirements:
                                 response_text = re.sub(pattern, "", response_text, flags=re.IGNORECASE)
                                 logger.info("Generic reference removed from response")
                         
-                        # Post-process to remove any unwanted metadata sections
+                        # Post-process to remove any unwanted metadata sections and hashtags
                         response_text = self._clean_response_text(response_text)
+                        response_text = self._remove_hashtags(response_text)
                         parsed_response["response"] = response_text
                         
                         # Add image tracking information (LLM already uses numbered references)
@@ -898,6 +949,7 @@ Quality requirements:
                 # Final fallback: extract response and chunks using old method
                 chunks_used = self._extract_referenced_sections(raw_response, chunks)
                 cleaned_response = self._clean_response_text(raw_response)
+                cleaned_response = self._remove_hashtags(cleaned_response)
                 return {
                     "response": cleaned_response,
                     "chunks_used": chunks_used,
