@@ -726,6 +726,46 @@ Please decide:
         
         logger.info(f"Final collection: {len(images)} embedded images and {len(tables)} tables")
         
+        # Check if we found all images that LLM had access to
+        image_reference_mapping = state["llm_response"].get("image_reference_mapping", {})
+        expected_images = set(image_reference_mapping.values())  # All filenames LLM knew about
+        found_images = {img.filename if hasattr(img, 'filename') else str(img) for img in images}
+        
+        missing_images = expected_images - found_images
+        if missing_images:
+            logger.warning(f"Missing {len(missing_images)} images that LLM had access to: {missing_images}")
+            logger.info("Searching all chunks for missing images...")
+            
+            # Search all chunks more thoroughly for missing images
+            for chunk in current_chunks:
+                if not isinstance(chunk, dict):
+                    continue
+                    
+                chunk_heading = chunk.get("metadata", {}).get("heading", "Unknown")
+                embedded_images = chunk.get("embedded_images", [])
+                
+                if isinstance(embedded_images, list):
+                    for img in embedded_images:
+                        if hasattr(img, 'filename'):
+                            filename = img.filename
+                        elif isinstance(img, dict) and 'filename' in img:
+                            filename = img['filename']
+                        else:
+                            filename = str(img)
+                        
+                        if filename in missing_images and filename not in seen_image_filenames:
+                            images.append(img)
+                            seen_image_filenames.add(filename)
+                            logger.info(f"Found missing image: {filename} in chunk '{chunk_heading}'")
+                            missing_images.remove(filename)
+            
+            if missing_images:
+                logger.error(f"Still missing images after thorough search: {missing_images}")
+            else:
+                logger.info("All missing images found and added")
+        
+        logger.info(f"Final collection after missing image search: {len(images)} embedded images and {len(tables)} tables")
+        
         return images, tables
     
     def _validate_suggested_images(self, state: QueryState) -> None:
