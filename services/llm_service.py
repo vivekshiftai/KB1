@@ -130,6 +130,7 @@ class LLMService:
                 r'\n\n\*\*Visual References:\*\*.*?(?=\n\n|\Z)',
                 r'\n\n\*\*Suggested Images:\*\*.*?(?=\n\n|\Z)',
                 r'\n\n\*\*References:\*\*.*?(?=\n\n|\Z)',
+                r'\n\n\*\*Reference Images:\*\*.*?(?=\n\n|\Z)',
                 r'\n\n\*\*Sources:\*\*.*?(?=\n\n|\Z)',
                 
                 # Regular sections
@@ -137,6 +138,7 @@ class LLMService:
                 r'\nVisual References:.*?(?=\n\n|\Z)',
                 r'\nSuggested Images:.*?(?=\n\n|\Z)',
                 r'\nReferences:.*?(?=\n\n|\Z)',
+                r'\nReference Images:.*?(?=\n\n|\Z)',
                 r'\nSources:.*?(?=\n\n|\Z)',
                 
                 # With lists
@@ -144,21 +146,28 @@ class LLMService:
                 r'Visual References:\s*\n.*?(?=\n\n|\Z)',
                 r'Suggested Images:\s*\n.*?(?=\n\n|\Z)',
                 r'References:\s*\n.*?(?=\n\n|\Z)',
+                r'Reference Images:\s*\n.*?(?=\n\n|\Z)',
                 r'Sources:\s*\n.*?(?=\n\n|\Z)',
                 
                 # Standalone at end
                 r'\*\*Chunks Used:\*\*\s*$',
                 r'\*\*Visual References:\*\*\s*$',
                 r'\*\*Suggested Images:\*\*\s*$',
+                r'\*\*Reference Images:\*\*\s*$',
                 r'\*\*References:\*\*\s*$',
                 r'Chunks Used:\s*$',
                 r'Visual References:\s*$',
                 r'Suggested Images:\s*$',
+                r'Reference Images:\s*$',
                 r'References:\s*$',
                 
                 # Image reference patterns that might appear
                 r'Image \d+:.*?(?=\n\n|\Z)',
                 r'- Image \d+:.*?(?=\n\n|\Z)',
+                
+                # Incomplete sections at end
+                r'\*\*Reference Images:\*\*\s*-\s*$',
+                r'Reference Images:\s*-\s*$',
             ]
             
             cleaned_text = response_text

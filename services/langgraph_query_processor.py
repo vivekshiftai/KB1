@@ -625,13 +625,36 @@ Please decide:
         logger.info(f"Image reference mapping: {state['llm_response'].get('image_reference_mapping', {})}")
         
         try:
-            # Collect images and tables from used chunks (keep original behavior)
-            images, tables = self._collect_media_from_chunks(state)
+            # Collect all available images and tables from used chunks
+            all_images, tables = self._collect_media_from_chunks(state)
             
-            # Validate and log suggested images for tracking purposes (doesn't change response)
+            # Validate and log suggested images for tracking purposes
             self._validate_suggested_images(state)
             
-            logger.info(f"Returning {len(images)} images from used chunks (original behavior maintained)")
+            # Option: Return only LLM-suggested images or all images
+            suggested_images = state["llm_response"].get("suggested_images", [])
+            image_reference_mapping = state["llm_response"].get("image_reference_mapping", {})
+            
+            if suggested_images and len(suggested_images) < len(all_images):
+                # Filter to return only suggested images
+                suggested_image_data = []
+                for img in all_images:
+                    img_filename = img.filename if hasattr(img, 'filename') else str(img)
+                    # Check if this image corresponds to a suggested image
+                    for suggested_ref in suggested_images:
+                        expected_filename = f"{suggested_ref}.jpg"
+                        if img_filename == expected_filename:
+                            suggested_image_data.append(img)
+                            break
+                
+                logger.info(f"LLM suggested {len(suggested_images)} relevant images out of {len(all_images)} available")
+                logger.info(f"Returning {len(suggested_image_data)} LLM-suggested images: {suggested_images}")
+                logger.info(f"Suggested image filenames: {[img.filename if hasattr(img, 'filename') else str(img) for img in suggested_image_data]}")
+                images = suggested_image_data
+            else:
+                logger.info(f"Returning all {len(all_images)} images (no specific suggestions or all images suggested)")
+                logger.info(f"All image filenames: {[img.filename if hasattr(img, 'filename') else str(img) for img in all_images]}")
+                images = all_images
             
             # Create final response with dynamic processing information
             final_response = QueryResponse(
@@ -663,7 +686,13 @@ Please decide:
             state["tables"] = tables
             state["processing_time"] = final_response.processing_time
             
-            logger.info(f"Response finalized - {len(images)} images, {len(tables)} tables")
+            logger.info(f"=== RESPONSE FINALIZATION COMPLETE ===")
+            logger.info(f"Final response contains:")
+            logger.info(f"- Images: {len(images)}")
+            logger.info(f"- Tables: {len(tables)}")
+            logger.info(f"- Suggested images: {final_response.suggested_images}")
+            logger.info(f"- Images used for response: {final_response.images_used_for_response}")
+            logger.info(f"Final image filenames in response: {[img.filename if hasattr(img, 'filename') else str(img) for img in images]}")
             
         except Exception as e:
             logger.error(f"Error finalizing response: {str(e)}")
@@ -744,25 +773,28 @@ Please decide:
                             if hasattr(img, 'filename'):
                                 # Create new ImageData object with numbered filename
                                 from models.schemas import ImageData
+                                numbered_filename = f"{numbered_name}.jpg"
                                 numbered_img = ImageData(
-                                    filename=f"{numbered_name}.jpg",  # e.g., "image 1.jpg"
+                                    filename=numbered_filename,  # e.g., "image 1.jpg"
                                     data=img.data,
                                     mime_type=img.mime_type,
                                     size=img.size
                                 )
                                 images.append(numbered_img)
-                                logger.info(f"Added image: {original_filename} as '{numbered_name}.jpg' from chunk '{chunk_heading}'")
+                                logger.info(f"✓ CONVERTED: {original_filename} -> {numbered_filename} from chunk '{chunk_heading}'")
+                                logger.info(f"✓ NEW IMAGE OBJECT: filename='{numbered_img.filename}', size={numbered_img.size}, type={numbered_img.mime_type}")
                             else:
                                 # Handle dict format
                                 numbered_img = img.copy() if isinstance(img, dict) else img
+                                numbered_filename = f"{numbered_name}.jpg"
                                 if isinstance(numbered_img, dict):
-                                    numbered_img['filename'] = f"{numbered_name}.jpg"
+                                    numbered_img['filename'] = numbered_filename
                                 images.append(numbered_img)
-                                logger.info(f"Added image: {original_filename} as '{numbered_name}.jpg' from chunk '{chunk_heading}'")
+                                logger.info(f"✓ CONVERTED (dict): {original_filename} -> {numbered_filename} from chunk '{chunk_heading}'")
                         else:
                             # No mapping found, use original
                             images.append(img)
-                            logger.warning(f"No numbered mapping found for {original_filename}, using original filename")
+                            logger.warning(f"❌ NO MAPPING: {original_filename} not found in mapping {list(image_reference_mapping.keys())}, using original filename")
                         
                         seen_image_filenames.add(original_filename)
                     else:
