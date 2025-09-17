@@ -740,22 +740,19 @@ Please decide:
         logger.info(f"Validating {len(suggested_images)} suggested images: {suggested_images}")
         
         # Collect all available images from current chunks for validation
-        # Create numbered image names that match what LLM knows about
+        # Use the same numbering logic as the LLM service
         all_available_images = set()
         current_chunks = state.get("current_chunks", [])
         
-        image_counter = 1
-        for chunk in current_chunks:
-            if not isinstance(chunk, dict):
-                continue
-                
-            embedded_images = chunk.get("embedded_images", [])
-            if isinstance(embedded_images, list):
-                for img in embedded_images:
-                    # Add numbered image name instead of filename
-                    numbered_image_name = f"image {image_counter}"
-                    all_available_images.add(numbered_image_name)
-                    image_counter += 1
+        # Get the image reference mapping from LLM response to know the correct numbering
+        image_reference_mapping = state["llm_response"].get("image_reference_mapping", {})
+        
+        # Add all numbered image names from the mapping
+        for numbered_name in image_reference_mapping.keys():
+            all_available_images.add(numbered_name)
+        
+        logger.info(f"Available numbered images for validation: {sorted(all_available_images)}")
+        logger.info(f"Image reference mapping: {image_reference_mapping}")
         
         # Validate suggested images (for logging purposes only)
         valid_suggestions = 0
@@ -764,12 +761,6 @@ Please decide:
                 valid_suggestions += 1
                 logger.info(f"✓ Valid suggestion: {suggested_image_name}")
             else:
-                logger.warning(f"✗ Invalid suggestion: {suggested_image_name} (not found in available images)")
-                # Try fuzzy matching for logging
-                for available_name in all_available_images:
-                    if (suggested_image_name.lower() in available_name.lower() or 
-                        available_name.lower() in suggested_image_name.lower()):
-                        logger.info(f"  → Could be fuzzy matched to: {available_name}")
-                        break
+                logger.warning(f"✗ Invalid suggestion: {suggested_image_name} (not found in available numbered images: {sorted(all_available_images)})")
         
         logger.info(f"Suggestion validation: {valid_suggestions}/{len(suggested_images)} valid suggestions")
