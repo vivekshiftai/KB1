@@ -196,7 +196,9 @@ class LangGraphQueryProcessor:
                 chunks_used=[],
                 images=[],
                 tables=[],
-                processing_time=calculate_processing_time(start_time)
+                processing_time=calculate_processing_time(start_time),
+                suggested_images=[],
+                images_used_for_response=[]
             )
     
     def _initialize_query(self, state: QueryState) -> QueryState:
@@ -604,8 +606,13 @@ Please decide:
         logger.info("Finalizing response")
         
         try:
-            # Collect images and tables from used chunks
+            # Collect images and tables from used chunks (keep original behavior)
             images, tables = self._collect_media_from_chunks(state)
+            
+            # Validate and log suggested images for tracking purposes (doesn't change response)
+            self._validate_suggested_images(state)
+            
+            logger.info(f"Returning {len(images)} images from used chunks (original behavior maintained)")
             
             # Create final response with dynamic processing information
             final_response = QueryResponse(
@@ -615,7 +622,9 @@ Please decide:
                 chunks_used=state["llm_response"].get("chunks_used", []),
                 images=images,
                 tables=tables,
-                processing_time=calculate_processing_time(state["start_time"])
+                processing_time=calculate_processing_time(state["start_time"]),
+                suggested_images=state["llm_response"].get("suggested_images", []),
+                images_used_for_response=state["llm_response"].get("images_used_for_response", [])
             )
             
             # Add dynamic processing metadata if available
@@ -647,7 +656,9 @@ Please decide:
                 chunks_used=[],
                 images=[],
                 tables=[],
-                processing_time=calculate_processing_time(state["start_time"])
+                processing_time=calculate_processing_time(state["start_time"]),
+                suggested_images=[],
+                images_used_for_response=[]
             )
         
         return state
@@ -717,3 +728,46 @@ Please decide:
         logger.info(f"Collected {len(images)} embedded images and {len(tables)} tables from chunks")
         
         return images, tables
+    
+    def _validate_suggested_images(self, state: QueryState) -> None:
+        """Validate and log LLM suggested images for tracking purposes (doesn't change response)"""
+        suggested_images = state["llm_response"].get("suggested_images", [])
+        
+        if not suggested_images:
+            logger.info("No suggested images to validate")
+            return
+        
+        logger.info(f"Validating {len(suggested_images)} suggested images: {suggested_images}")
+        
+        # Collect all available images from current chunks for validation
+        all_available_images = set()
+        current_chunks = state.get("current_chunks", [])
+        
+        for chunk in current_chunks:
+            if not isinstance(chunk, dict):
+                continue
+                
+            embedded_images = chunk.get("embedded_images", [])
+            if isinstance(embedded_images, list):
+                for img in embedded_images:
+                    if hasattr(img, 'filename'):
+                        all_available_images.add(img.filename)
+                    elif isinstance(img, dict) and 'filename' in img:
+                        all_available_images.add(img['filename'])
+        
+        # Validate suggested images (for logging purposes only)
+        valid_suggestions = 0
+        for suggested_image_name in suggested_images:
+            if suggested_image_name in all_available_images:
+                valid_suggestions += 1
+                logger.info(f"✓ Valid suggestion: {suggested_image_name}")
+            else:
+                logger.warning(f"✗ Invalid suggestion: {suggested_image_name} (not found in available images)")
+                # Try fuzzy matching for logging
+                for available_name in all_available_images:
+                    if (suggested_image_name.lower() in available_name.lower() or 
+                        available_name.lower() in suggested_image_name.lower()):
+                        logger.info(f"  → Could be fuzzy matched to: {available_name}")
+                        break
+        
+        logger.info(f"Suggestion validation: {valid_suggestions}/{len(suggested_images)} valid suggestions")

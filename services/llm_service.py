@@ -118,6 +118,67 @@ class LLMService:
         """Count tokens in text"""
         return len(self.encoding.encode(text))
     
+    def _clean_response_text(self, response_text: str) -> str:
+        """Remove unwanted metadata sections from response text"""
+        try:
+            import re
+            
+            # Patterns to remove chunks used and visual references sections
+            patterns_to_remove = [
+                r'\n\n\*\*Chunks Used:\*\*.*?(?=\n\n|\Z)',  # Remove "Chunks Used:" section
+                r'\n\n\*\*Visual References:\*\*.*?(?=\n\n|\Z)',  # Remove "Visual References:" section
+                r'\nChunks Used:.*?(?=\n\n|\Z)',  # Remove "Chunks Used:" without bold
+                r'\nVisual References:.*?(?=\n\n|\Z)',  # Remove "Visual References:" without bold
+                r'Chunks Used:\s*\n.*?(?=\n\n|\Z)',  # Remove "Chunks Used:" with list
+                r'Visual References:\s*\n.*?(?=\n\n|\Z)',  # Remove "Visual References:" with list
+                r'Important Notes:\s*\n.*?(?=\n\n|\Z)',  # Remove "Important Notes:" section if it contains metadata
+            ]
+            
+            cleaned_text = response_text
+            for pattern in patterns_to_remove:
+                cleaned_text = re.sub(pattern, '', cleaned_text, flags=re.DOTALL | re.IGNORECASE)
+            
+            # Clean up any extra whitespace
+            cleaned_text = re.sub(r'\n{3,}', '\n\n', cleaned_text)  # Replace multiple newlines with double newlines
+            cleaned_text = cleaned_text.strip()
+            
+            if cleaned_text != response_text:
+                logger.info("Removed unwanted metadata sections from response text")
+            
+            return cleaned_text
+            
+        except Exception as e:
+            logger.warning(f"Error cleaning response text: {str(e)}")
+            return response_text
+    
+    def _validate_suggested_images(self, suggested_images: List[str], available_images: List[str]) -> List[str]:
+        """Validate suggested images against available images and log any issues"""
+        try:
+            validated_images = []
+            
+            for suggested_image in suggested_images:
+                if suggested_image in available_images:
+                    validated_images.append(suggested_image)
+                    logger.info(f"Valid image suggestion: {suggested_image}")
+                else:
+                    logger.warning(f"Invalid image suggestion '{suggested_image}' - not found in available images: {available_images}")
+                    # Try to find similar image names (case-insensitive partial matching)
+                    for available_image in available_images:
+                        if (suggested_image.lower() in available_image.lower() or 
+                            available_image.lower() in suggested_image.lower()):
+                            validated_images.append(available_image)
+                            logger.info(f"Found similar image '{available_image}' for suggestion '{suggested_image}'")
+                            break
+            
+            if len(validated_images) != len(suggested_images):
+                logger.warning(f"Validated {len(validated_images)} out of {len(suggested_images)} suggested images")
+            
+            return validated_images
+            
+        except Exception as e:
+            logger.error(f"Error validating suggested images: {str(e)}")
+            return []
+    
     def _needs_table_data(self, query: str) -> bool:
         """Determine if the query requires table data - Always return True to include all data"""
         # Always include tables and full data for comprehensive responses
@@ -352,6 +413,8 @@ Return ONLY the JSON object, no additional text."""
         context_parts = []
         chunk_headings = []
         chunk_data_with_images = []
+        all_available_images = []  # Collect all image names for LLM suggestions
+        
         for chunk in chunks:
             try:
                 # Filter content based on table needs - now returns dict with text, images, tables
@@ -370,6 +433,11 @@ Return ONLY the JSON object, no additional text."""
                         "images": images,
                         "tables": tables
                     })
+                    
+                    # Collect all available image names
+                    for img in images:
+                        if img['filename'] not in all_available_images:
+                            all_available_images.append(img['filename'])
                     
                     # Add text content to context
                     context_parts.append(f"**{heading}**\n{text_content}")
@@ -401,7 +469,14 @@ Return ONLY the JSON object, no additional text."""
         image_context = ""
         total_images = sum(len(chunk["images"]) for chunk in chunk_data_with_images)
         if total_images > 0:
-            image_context = f"\n\nIMAGES AVAILABLE: {total_images} images are provided with this documentation. Each image is associated with its specific text content. Use these images to enhance your understanding and provide visual context in your response. You can reference specific images by their number (e.g., 'as shown in image 1', 'see image 2')."
+            image_list_text = ", ".join(all_available_images) if all_available_images else "none"
+            image_context = f"""
+
+IMAGES AVAILABLE: {total_images} images are provided with this documentation. Each image is associated with its specific text content. Use these images to enhance your understanding and provide visual context in your response.
+
+Available image files: {image_list_text}
+
+You can reference specific images by their number (e.g., 'as shown in image 1', 'see image 2')."""
         
         # Add query analysis information if available
         analysis_info = ""
@@ -428,6 +503,9 @@ CRITICAL RULES:
 - NEVER say "refer to", "see", "check section", or "please refer to"
 - ALWAYS provide the actual content from the documentation
 - If information is missing, say "This information is not available in the provided documentation"
+- DO NOT include "Chunks Used", "Visual References", or any metadata sections in your response
+- DO NOT mention which chunks or sections you used in your response text
+- Focus only on providing the actual answer to the user's question
 
 RESPONSE FORMAT:
 - Use **bold** for main headings
@@ -439,13 +517,15 @@ RESPONSE FORMAT:
 JSON FORMAT:
 {{
     "response": "Your formatted answer with line breaks and **bold** headings",
-    "chunks_used": ["section headings you used"]
+    "chunks_used": ["section headings you used"],
+    "suggested_images": ["image1.png", "image2.jpg"]
 }}
 
 EXAMPLE:
 {{
     "response": "**Maintenance Procedures**\\n1. Check conveyor belts weekly\\n2. Replace brushes as needed\\n\\n**Daily Care:**\\n• Clean the scraper and rollers\\n• Clean the synthetic conveyor belt\\n\\n**Weekly Care:**\\n• Clean the roller head and machine base\\n• Clean the driving and idle rollers",
-    "chunks_used": ["Maintenance Procedures"]
+    "chunks_used": ["Maintenance Procedures"],
+    "suggested_images": ["maintenance_belt.jpg", "roller_cleaning.png"]
 }}
 
 Return ONLY the JSON object."""
@@ -462,7 +542,15 @@ Please ensure your response addresses all aspects of the original query comprehe
         # Prepare image information for the prompt
         image_info = ""
         if total_images > 0:
-            image_info = f"\n\nIMAGES PROVIDED: {total_images} images are included with this documentation. Each image is associated with its specific text content. Use these images to provide visual context and reference them in your response (e.g., 'as shown in image 1', 'see image 2')."
+            image_info = f"""
+
+IMAGES PROVIDED: {total_images} images are included with this documentation. Each image is associated with its specific text content. 
+
+Available images: {", ".join(all_available_images)}
+
+Use these images to provide visual context and reference them in your response (e.g., 'as shown in image 1', 'see image 2').
+
+For the suggested_images field, select the most relevant image filenames from the available list that would help users understand your response."""
         
         user_prompt = f"""Documentation:
 {context}
@@ -474,18 +562,23 @@ Instructions:
 - NEVER say "see section X", "refer to chapter Y", or "as described in Z"
 - NEVER use phrases like "refer to", "see", "check section", or "please refer to"
 - ALWAYS provide the actual content from the documentation
+- DO NOT include "Chunks Used", "Visual References", or any metadata sections in your response
+- DO NOT mention which chunks, sections, or images you used in your response text
 - Format as numbered steps with line breaks
 - Use **bold** for main headings
 - Use bullet points for lists
 - Include specific details from the documentation
 - Reference images when relevant (e.g., "as shown in image 1")
-- List section headings you used in chunks_used
+- List section headings you used in chunks_used field only (not in response text)
 
 Return JSON format:
 {{
     "response": "Your answer with \\n for line breaks and **bold** headings",
-    "chunks_used": ["section headings"]
-}}"""
+    "chunks_used": ["section headings"],
+    "suggested_images": ["relevant_image_names.jpg"]
+}}
+
+IMPORTANT: In the suggested_images field, include the names of images that are most relevant to your response. These should be images that would help users understand the procedures, concepts, or equipment mentioned in your answer."""
         
         try:
             # Get query model configuration
@@ -498,6 +591,8 @@ Return JSON format:
                 
                 # Add images from each chunk with their associated text
                 image_counter = 1
+                images_used_for_response = []  # Track images used in response generation
+                
                 for chunk_data in chunk_data_with_images:
                     if chunk_data["images"]:
                         # Add a separator for this chunk's images
@@ -515,6 +610,7 @@ Return JSON format:
                                     "detail": "high"
                                 }
                             })
+                            images_used_for_response.append(img['filename'])  # Track image usage
                             logger.info(f"Added image {image_counter} to LLM request: {img['filename']} (from chunk: {chunk_data['heading']})")
                             image_counter += 1
                 
@@ -603,6 +699,12 @@ Return JSON format:
                         # Post-process to remove any remaining generic references
                         response_text = parsed_response["response"]
                         
+                        # Extract suggested images if provided by LLM
+                        suggested_images = parsed_response.get("suggested_images", [])
+                        
+                        # Validate suggested images against available images
+                        validated_suggested_images = self._validate_suggested_images(suggested_images, all_available_images)
+                        
                         # Ensure re module is available
                         import re
                         
@@ -624,9 +726,19 @@ Return JSON format:
                                 # Replace with a more appropriate message
                                 response_text = re.sub(pattern, "Please refer to the specific procedures in the documentation", response_text, flags=re.IGNORECASE)
                         
+                        # Post-process to remove any unwanted metadata sections
+                        response_text = self._clean_response_text(response_text)
                         parsed_response["response"] = response_text
                         
+                        # Add image tracking information
+                        parsed_response["suggested_images"] = validated_suggested_images
+                        parsed_response["images_used_for_response"] = images_used_for_response
+                        
                         logger.info(f"Successfully parsed JSON response with {len(parsed_response.get('chunks_used', []))} referenced chunks")
+                        logger.info(f"Available images: {all_available_images}")
+                        logger.info(f"LLM suggested images: {suggested_images}")
+                        logger.info(f"Validated suggested images: {validated_suggested_images}")
+                        logger.info(f"Images used for response: {images_used_for_response}")
                         return parsed_response
                     else:
                         logger.warning("JSON response missing required fields, using fallback")
@@ -649,6 +761,11 @@ Return JSON format:
                     
                     parsed_response = json.loads(json_str_clean)
                     if "response" in parsed_response and "chunks_used" in parsed_response:
+                        # Add image tracking information for aggressive cleaning case
+                        suggested_images = parsed_response.get("suggested_images", [])
+                        validated_suggested_images = self._validate_suggested_images(suggested_images, all_available_images)
+                        parsed_response["suggested_images"] = validated_suggested_images
+                        parsed_response["images_used_for_response"] = images_used_for_response
                         logger.info("Successfully parsed JSON after aggressive cleaning")
                         return parsed_response
                 except Exception as e2:
@@ -656,9 +773,12 @@ Return JSON format:
                 
                 # Final fallback: extract response and chunks using old method
                 chunks_used = self._extract_referenced_sections(raw_response, chunks)
+                cleaned_response = self._clean_response_text(raw_response)
                 return {
-                    "response": raw_response,
-                    "chunks_used": chunks_used
+                    "response": cleaned_response,
+                    "chunks_used": chunks_used,
+                    "suggested_images": [],  # No suggestions available in fallback
+                    "images_used_for_response": images_used_for_response
                 }
             
         except Exception as e:
@@ -1176,7 +1296,9 @@ Return ONLY the JSON object with safety_precautions and safety_information array
                     "response": f"I don't have access to specific documentation about '{query}'. Please ensure the document is properly uploaded and processed.",
                     "chunks_used": [],
                     "processing_stages": ["initial_query"],
-                    "confidence_score": 0.0
+                    "confidence_score": 0.0,
+                    "suggested_images": [],
+                    "images_used_for_response": []
                 }
             
             # Stage 2: Assess information sufficiency
@@ -1293,7 +1415,9 @@ Return ONLY the JSON object with safety_precautions and safety_information array
                 "chunks_used": [],
                 "processing_stages": ["error"],
                 "confidence_score": 0.0,
-                "error": str(e)
+                "error": str(e),
+                "suggested_images": [],
+                "images_used_for_response": []
             }
 
     async def evaluate_response_quality(self, response: Dict[str, Any], query: str, assessment: Dict[str, Any]) -> Dict[str, Any]:

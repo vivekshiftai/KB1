@@ -36,6 +36,9 @@ class QueryResponse(BaseModel):
     images: List[ImageData]  # Actual image data instead of URLs
     tables: List[str]
     processing_time: str
+    # Image suggestions and usage tracking
+    suggested_images: Optional[List[str]] = None  # Names of images suggested by LLM
+    images_used_for_response: Optional[List[str]] = None  # Names of images used in response generation
     # Dynamic processing metadata
     processing_stages: Optional[List[str]] = None
     confidence_score: Optional[float] = None
