@@ -669,19 +669,33 @@ Please decide:
         tables = []
         seen_image_filenames = set()
         
-        # Get current chunks and chunks referenced by LLM
+        # Get chunks that were actually processed by LLM service (if available)
+        processed_chunks = state["llm_response"].get("processed_chunks", [])
         current_chunks = state.get("current_chunks", [])
         chunks_used = state["llm_response"].get("chunks_used", [])
         
-        if not isinstance(current_chunks, list):
-            logger.warning(f"current_chunks is not a list: {type(current_chunks)}")
-            current_chunks = []
+        # Use processed chunks if available (more complete), otherwise fall back to current_chunks
+        if processed_chunks and isinstance(processed_chunks, list):
+            chunks_to_search = processed_chunks
+            logger.info(f"Using {len(processed_chunks)} processed chunks from LLM service")
+        else:
+            chunks_to_search = current_chunks
+            logger.info(f"Using {len(current_chunks)} current chunks (processed chunks not available)")
         
-        logger.info(f"Collecting images from all {len(current_chunks)} chunks (LLM had access to all images)")
+        if not isinstance(chunks_to_search, list):
+            logger.warning(f"chunks_to_search is not a list: {type(chunks_to_search)}")
+            chunks_to_search = []
+        
+        # Check if we have all chunks that LLM processed
+        image_reference_mapping = state["llm_response"].get("image_reference_mapping", {})
+        expected_image_count = len(image_reference_mapping)
+        
+        logger.info(f"Collecting images from all {len(chunks_to_search)} chunks (LLM had access to all images)")
+        logger.info(f"Expected {expected_image_count} images based on LLM mapping: {list(image_reference_mapping.values())}")
         logger.info(f"Collecting tables only from referenced chunks: {chunks_used}")
         
         # Collect images from ALL chunks (since LLM saw all images)
-        for i, chunk in enumerate(current_chunks):
+        for i, chunk in enumerate(chunks_to_search):
             if not isinstance(chunk, dict):
                 logger.warning(f"Skipping non-dict chunk: {type(chunk)}")
                 continue
@@ -737,7 +751,7 @@ Please decide:
             logger.info("Searching all chunks for missing images...")
             
             # Search all chunks more thoroughly for missing images
-            for chunk in current_chunks:
+            for chunk in chunks_to_search:
                 if not isinstance(chunk, dict):
                     continue
                     

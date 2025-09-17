@@ -1426,7 +1426,8 @@ Provide the JSON object with safety_precautions and safety_information arrays.""
                 "assessment": assessment,
                 "evaluation": evaluation,
                 "confidence_score": evaluation.get("confidence_score", 0.0),
-                "collection_used": collection_name  # Track which collection was used throughout
+                "collection_used": collection_name,  # Track which collection was used throughout
+                "processed_chunks": all_chunks  # Store all chunks that were processed by LLM
             }
             
             logger.info(f"Dynamic processing completed: {len(processing_stages)} stages, {len(all_chunks)} total chunks, confidence: {result['confidence_score']}")
