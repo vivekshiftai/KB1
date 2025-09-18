@@ -624,43 +624,65 @@ Respond with JSON:
             if chunk_data.get("images"):
                 labeled_images = []
                 for img in chunk_data["images"]:
-                    # Find the numbered reference for this image
-                    img_filename = img['filename']
-                    numbered_reference = None
-                    for ref, filename in image_reference_mapping.items():
-                        if filename == img_filename:
-                            numbered_reference = ref
-                            break
+                    try:
+                        # Find the numbered reference for this image
+                        img_filename = img.get('filename', 'unknown.jpg')
+                        numbered_reference = None
+                        for ref, filename in image_reference_mapping.items():
+                            if filename == img_filename:
+                                numbered_reference = ref
+                                break
+                        
+                        if numbered_reference:
+                            # Convert dict to ImageData for labeling
+                            from models.schemas import ImageData
+                            
+                            # Safely extract image data with defaults
+                            img_data = img.get('data', '')
+                            img_mime_type = img.get('mime_type', 'image/jpeg')
+                            
+                            # Calculate size safely
+                            img_size = img.get('size')
+                            if img_size is None and img_data:
+                                try:
+                                    img_size = len(base64.b64decode(img_data))
+                                except Exception as e:
+                                    logger.warning(f"Could not decode image data for size calculation: {e}")
+                                    img_size = 0
+                            elif img_size is None:
+                                img_size = 0
+                            
+                            image_data = ImageData(
+                                filename=img_filename,
+                                data=img_data,
+                                mime_type=img_mime_type,
+                                size=img_size
+                            )
+                            
+                            # Label the image
+                            labeled_image_data = self.image_processor.add_label_to_image(image_data, numbered_reference)
+                            
+                            # Convert back to dict format for chunk storage
+                            labeled_img_dict = {
+                                'filename': labeled_image_data.filename,
+                                'data': labeled_image_data.data,
+                                'mime_type': labeled_image_data.mime_type,
+                                'size': labeled_image_data.size,
+                                'original_filename': img_filename,  # Keep track of original
+                                'image_number': image_counter,
+                                'description': f"{numbered_reference}: {img_filename}"
+                            }
+                            labeled_images.append(labeled_img_dict)
+                            logger.info(f"✅ Pre-labeled {img_filename} as '{numbered_reference}'")
+                        else:
+                            # Keep original if no mapping found
+                            labeled_images.append(img)
+                            logger.warning(f"No reference mapping found for {img_filename}")
                     
-                    if numbered_reference:
-                        # Convert dict to ImageData for labeling
-                        from models.schemas import ImageData
-                        image_data = ImageData(
-                            filename=img['filename'],
-                            data=img['data'],
-                            mime_type=img['mime_type'],
-                            size=img['size']
-                        )
-                        
-                        # Label the image
-                        labeled_image_data = self.image_processor.add_label_to_image(image_data, numbered_reference)
-                        
-                        # Convert back to dict format for chunk storage
-                        labeled_img_dict = {
-                            'filename': labeled_image_data.filename,
-                            'data': labeled_image_data.data,
-                            'mime_type': labeled_image_data.mime_type,
-                            'size': labeled_image_data.size,
-                            'original_filename': img_filename,  # Keep track of original
-                            'image_number': image_counter,
-                            'description': f"{numbered_reference}: {img_filename}"
-                        }
-                        labeled_images.append(labeled_img_dict)
-                        logger.info(f"✅ Pre-labeled {img_filename} as '{numbered_reference}'")
-                    else:
-                        # Keep original if no mapping found
+                    except Exception as e:
+                        logger.error(f"Error pre-labeling image {img.get('filename', 'unknown')}: {str(e)}")
+                        # Keep original image if labeling fails
                         labeled_images.append(img)
-                        logger.warning(f"No reference mapping found for {img_filename}")
                 
                 # Replace original images with labeled ones
                 chunk_data["images"] = labeled_images

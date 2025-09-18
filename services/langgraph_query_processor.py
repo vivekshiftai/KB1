@@ -526,7 +526,7 @@ Please provide a comprehensive answer that addresses all aspects of the original
         
         # Create human-readable summary
         summary = f"""
-Query: {state['query']}
+Query: {state['original_query']}
 Iteration: {iteration + 1}/{state['max_iterations']}
 Confidence Score: {confidence:.2f}
 Chunks Used: {len(state['llm_response'].get('chunks_used', []))}
