@@ -14,6 +14,7 @@ from langgraph.types import interrupt, Command
 from services.vector_db import VectorDatabase
 from services.llm_service import LLMService
 from utils.helpers import sanitize_filename, calculate_processing_time
+from utils.image_processor import ImageProcessor
 from models.schemas import QueryRequest, QueryResponse, ImageData
 # Configuration constants
 MAX_ITERATIONS = 3
@@ -72,6 +73,7 @@ class LangGraphQueryProcessor:
     def __init__(self):
         self.vector_db = VectorDatabase()
         self.llm_service = LLMService()
+        self.image_processor = ImageProcessor()
         
         # Build the LangGraph workflow
         self.graph = self._build_query_workflow()
@@ -635,30 +637,34 @@ Please decide:
             suggested_images = state["llm_response"].get("suggested_images", [])
             image_reference_mapping = state["llm_response"].get("image_reference_mapping", {})
             
-            if suggested_images and len(suggested_images) < len(all_images):
-                # Filter to return only suggested images and validate their relevance
+            if suggested_images:
+                # LLM service already did STRICT filtering - only images referenced in response text
                 suggested_image_data = []
-                filtered_suggestions = self._filter_relevant_suggestions(suggested_images, state)
+                logger.info(f"🎯 STRICT FILTERING: LLM service found {len(suggested_images)} images actually referenced in response text")
                 
                 for img in all_images:
                     img_filename = img.filename if hasattr(img, 'filename') else str(img)
-                    # Check if this image corresponds to a filtered suggested image
-                    for suggested_ref in filtered_suggestions:
-                        expected_filename = f"{suggested_ref}.jpg"
+                    # Check if this image corresponds to a referenced image
+                    for suggested_ref in suggested_images:
+                        expected_filename = f"{suggested_ref.replace(' ', '_')}.jpg"
                         if img_filename == expected_filename:
                             suggested_image_data.append(img)
+                            logger.info(f"✅ Including referenced image: {img_filename}")
                             break
                 
-                logger.info(f"LLM suggested {len(suggested_images)} images, filtered to {len(filtered_suggestions)} relevant images")
-                logger.info(f"Original suggestions: {suggested_images}")
-                logger.info(f"Filtered suggestions: {filtered_suggestions}")
-                logger.info(f"Returning {len(suggested_image_data)} filtered images")
-                logger.info(f"Final image filenames: {[img.filename if hasattr(img, 'filename') else str(img) for img in suggested_image_data]}")
-                images = suggested_image_data
+                logger.info(f"🎯 FINAL RESULT: {len(suggested_image_data)} images actually referenced in response")
+                logger.info(f"Referenced images: {suggested_images}")
+                logger.info(f"Returned image filenames: {[img.filename if hasattr(img, 'filename') else str(img) for img in suggested_image_data]}")
+                
+                # Add labels to images before returning them
+                logger.info("🏷️ Adding labels to referenced images...")
+                labeled_images = self.image_processor.add_labels_to_images(suggested_image_data, image_reference_mapping)
+                logger.info(f"✅ Labeled {len(labeled_images)} images with reference names")
+                
+                images = labeled_images
             else:
-                logger.info(f"Returning all {len(all_images)} images (no specific suggestions or all images suggested)")
-                logger.info(f"All image filenames: {[img.filename if hasattr(img, 'filename') else str(img) for img in all_images]}")
-                images = all_images
+                logger.info(f"❌ No images referenced in response text - returning empty list")
+                images = []
             
             # Create final response with dynamic processing information
             final_response = QueryResponse(
@@ -918,7 +924,8 @@ Please decide:
                 # Check if this appears to be an error/warning/emergency image
                 is_error_warning_image = any(keyword in original_filename.lower() for keyword in [
                     "error", "warning", "alarm", "emergency", "danger", "caution", 
-                    "symbol", "sign", "code", "alert", "fault"
+                    "symbol", "sign", "code", "alert", "fault", "prohibited", "stop",
+                    "hazard", "risk", "attention", "notice", "indication"
                 ])
                 
                 # Also check chunk headings for context
@@ -935,7 +942,8 @@ Please decide:
                                 break
                 
                 is_error_context = any(keyword in chunk_context for keyword in [
-                    "error", "warning", "alarm", "emergency", "safety", "sign", "symbol", "prohibited"
+                    "error", "warning", "alarm", "emergency", "safety", "sign", "symbol", "prohibited",
+                    "indication", "alert", "fault", "code", "hazard", "caution", "danger", "stop"
                 ])
                 
                 # Decision logic
@@ -946,12 +954,14 @@ Please decide:
                         logger.info(f"Including error/safety image '{suggested_image}' for error/safety query")
                     else:
                         # Query is not about errors/safety, exclude error/warning images
-                        logger.info(f"Filtering out error/warning image '{suggested_image}' for non-safety query")
-                        logger.info(f"Image context: {chunk_context}, filename: {original_filename}")
+                        logger.info(f"🚫 FILTERED OUT: '{suggested_image}' - emergency/warning image for procedural query")
+                        logger.info(f"   Reason: chunk='{chunk_context}', filename='{original_filename[:50]}...'")
+                        logger.info(f"   Query type: procedural, Image type: emergency/warning")
                 else:
                     # Regular procedural image, include it
                     filtered_suggestions.append(suggested_image)
-                    logger.info(f"Including procedural image '{suggested_image}'")
+                    logger.info(f"✅ INCLUDED: '{suggested_image}' - procedural image relevant to query")
+                    logger.info(f"   Context: chunk='{chunk_context}', filename='{original_filename[:50]}...'")
             
             logger.info(f"Image filtering: {len(suggested_images)} suggested -> {len(filtered_suggestions)} filtered")
             logger.info(f"Query type: {'error/safety' if is_error_safety_query else 'procedural'}")

@@ -168,6 +168,12 @@ class LLMService:
                 # Incomplete sections at end
                 r'\*\*Reference Images:\*\*\s*-\s*$',
                 r'Reference Images:\s*-\s*$',
+                
+                # List-style metadata sections
+                r'Suggested Images\s*\n\n-.*?(?=\n\n|\Z)',
+                r'Chunks Used\s*\n\n-.*?(?=\n\n|\Z)',
+                r'\*\*Suggested Images\*\*\s*\n\n-.*?(?=\n\n|\Z)',
+                r'\*\*Chunks Used\*\*\s*\n\n-.*?(?=\n\n|\Z)',
             ]
             
             cleaned_text = response_text
@@ -217,6 +223,34 @@ class LLMService:
         except Exception as e:
             logger.warning(f"Error removing hashtags: {str(e)}")
             return response_text
+
+    def _extract_images_from_response_text(self, response_text: str, image_reference_mapping: Dict[str, str]) -> List[str]:
+        """Extract only images that are actually referenced in the response text"""
+        try:
+            import re
+            
+            # Find all image references in the response text (e.g., "image 1", "image 2")
+            image_references = re.findall(r'\bimage\s+(\d+)\b', response_text, re.IGNORECASE)
+            
+            # Convert to the expected format and validate against mapping
+            images_actually_used = []
+            for img_num in image_references:
+                img_reference = f"image {img_num}"
+                if img_reference in image_reference_mapping:
+                    if img_reference not in images_actually_used:  # Avoid duplicates
+                        images_actually_used.append(img_reference)
+                        logger.info(f"✅ Found reference to '{img_reference}' in response text")
+                else:
+                    logger.warning(f"⚠️ Response references '{img_reference}' but it's not in mapping")
+            
+            logger.info(f"🎯 STRICT FILTERING: Found {len(images_actually_used)} images referenced in response text")
+            logger.info(f"Images actually referenced: {images_actually_used}")
+            
+            return images_actually_used
+            
+        except Exception as e:
+            logger.error(f"Error extracting images from response text: {str(e)}")
+            return []
     
     def _validate_suggested_images(self, suggested_images: List[str], available_images: List[str]) -> List[str]:
         """Validate suggested images against available images and log any issues"""
@@ -604,9 +638,11 @@ Please examine these images carefully and use them to:
 
 Image selection guidelines:
 - Suggest images that show actual procedures, controls, or equipment relevant to the question
-- Avoid suggesting error code charts, warning symbols, or emergency indicators unless specifically asked about errors or safety
-- Focus on procedural images that help users complete the task
-- Be selective - only suggest images that directly support your answer"""
+- Avoid suggesting error code charts, warning symbols, emergency indicators, safety signs, or alert symbols unless specifically asked about errors or safety
+- Do not suggest images of prohibited activity signs, hazard symbols, or emergency stop indicators for operational questions
+- Focus on procedural images that help users complete the specific task (control panels, buttons, screens, equipment)
+- Be highly selective - only suggest images that directly support completing the user's specific task
+- For safety information or error codes, provide the details in text rather than suggesting warning symbol images"""
         
         # Add query analysis information if available
         analysis_info = ""
@@ -644,20 +680,23 @@ Response quality standards:
 
 Response formatting:
 - Use **bold** for main headings (not hashtags like # or ##)
-- Use numbered steps (1., 2., 3., etc.)
+- Use Roman numerals for high-level sections (I., II., III., etc.)
+- Use numbered steps for procedures (1., 2., 3., etc.)
 - Use bullet points for sub-items (• or -)
 - Add line breaks between sections
 - Reference images when they support the explanation
 - Avoid markdown hashtags (#, ##, ###, ####) in your response
+- CRITICAL: Never include "Suggested Images", "Chunks Used", "Images Used", "Visual References", or any metadata sections in your response text
+- Your response should contain ONLY the actual answer content, no metadata or reference sections
 
 Respond in JSON format:
 {{
-    "response": "**Main Heading**\\n\\n1. First step with details\\n2. Second step with details\\n\\n**Sub-heading**\\n• Bullet point\\n• Another bullet point",
+    "response": "**Main Topic**\\n\\nI. **High Level Section**\\n1. First step with details\\n2. Second step with details\\n\\nII. **Another High Level Section**\\n1. First step\\n• Sub-detail\\n• Another sub-detail",
     "chunks_used": ["section headings you referenced"],
     "suggested_images": ["image 1", "image 2"]
 }}
 
-Important: Use **bold** for headings, not hashtags. Format should be clean and professional without markdown hashtags."""
+Important: Use **bold** for headings with Roman numerals for major sections, numbered steps for procedures. Never include "Suggested Images" or "Chunks Used" sections in your response text."""
         
         # Add query analysis guidance if available
         analysis_guidance = ""
@@ -710,22 +749,31 @@ Visual Analysis Instructions:
 - If you mention preparation steps or prerequisites, provide the specific details of what needs to be done
 - Analyze the images and use them to enhance your answer with visual context
 - Suggest only images that are directly relevant to answering this specific question
+- IMPORTANT: Do not suggest emergency symbols, alert icons, warning signs, or prohibited activity indicators for operational questions
 
 Image analysis and suggestions:
 - Examine each image to identify relevant visual elements for this specific query
 - Reference images naturally when they support your explanation (e.g., "as shown in image 1")
 - In the suggested_images field, include ONLY images that directly help answer the user's question
-- Avoid suggesting error code images, warning symbols, or emergency indicators unless the query specifically asks about errors or safety
-- Focus on images showing actual procedures, controls, equipment, or steps mentioned in your answer
-- Be selective - suggest only images that add practical value to understanding the response
+- Avoid suggesting error code images, warning symbols, emergency indicators, safety signs, or alert symbols unless the query specifically asks about errors or safety
+- Do not suggest images of prohibited activity signs, hazard symbols, or emergency stop indicators for procedural questions
+- Focus on images showing actual procedures, controls, equipment, buttons, screens, or operational steps mentioned in your answer
+- Be highly selective - suggest only images that directly help users complete the specific task or procedure
+- For error codes or safety information, include the specific codes and details directly in your text response rather than suggesting symbol or chart images
+- If you need to mention error codes, write them out (e.g., "Error Code 101: Motor Overload") instead of suggesting error code chart images
 
-Quality requirements:
+Quality and formatting requirements:
 - Every step must be complete and actionable
 - Include specific details from the documentation
 - Combine text instructions with relevant visual references
 - Provide practical, implementable guidance without section references
 - Use **bold** formatting for headings, not hashtags (#, ##, ###)
-- Format with proper line breaks and bullet points"""
+- Use Roman numerals (I., II., III.) for high-level sections
+- Use numbered steps (1., 2., 3.) for procedures
+- Use bullet points (•) for sub-items
+- CRITICAL: Never include "Suggested Images", "Chunks Used", "Images Used", "Visual References", or any metadata sections in your response text
+- Your response should contain ONLY the actual answer content, no metadata or reference sections
+- Your response should end with actual content, not metadata sections"""
         
         try:
             # Get query model configuration
@@ -904,9 +952,12 @@ Quality requirements:
                         response_text = self._remove_hashtags(response_text)
                         parsed_response["response"] = response_text
                         
-                        # Add image tracking information (LLM already uses numbered references)
-                        parsed_response["suggested_images"] = suggested_images  # Already numbered
-                        parsed_response["images_used_for_response"] = images_used_for_response
+                        # STRICT FILTERING: Only return images actually referenced in the response text
+                        images_actually_used = self._extract_images_from_response_text(response_text, image_reference_mapping)
+                        
+                        # Override LLM suggestions with only those actually used in response
+                        parsed_response["suggested_images"] = images_actually_used
+                        parsed_response["images_used_for_response"] = images_actually_used
                         parsed_response["image_reference_mapping"] = image_reference_mapping
                         
                         logger.info(f"Successfully parsed JSON response with {len(parsed_response.get('chunks_used', []))} referenced chunks")
@@ -936,10 +987,12 @@ Quality requirements:
                     
                     parsed_response = json.loads(json_str_clean)
                     if "response" in parsed_response and "chunks_used" in parsed_response:
-                        # Add image tracking information for aggressive cleaning case
-                        suggested_images = parsed_response.get("suggested_images", [])  # Already numbered
-                        parsed_response["suggested_images"] = suggested_images
-                        parsed_response["images_used_for_response"] = images_used_for_response
+                        # STRICT FILTERING: Only return images actually referenced in the response text
+                        response_text = parsed_response.get("response", "")
+                        images_actually_used = self._extract_images_from_response_text(response_text, image_reference_mapping)
+                        
+                        parsed_response["suggested_images"] = images_actually_used
+                        parsed_response["images_used_for_response"] = images_actually_used
                         parsed_response["image_reference_mapping"] = image_reference_mapping
                         logger.info("Successfully parsed JSON after aggressive cleaning")
                         return parsed_response
@@ -950,11 +1003,15 @@ Quality requirements:
                 chunks_used = self._extract_referenced_sections(raw_response, chunks)
                 cleaned_response = self._clean_response_text(raw_response)
                 cleaned_response = self._remove_hashtags(cleaned_response)
+                
+                # STRICT FILTERING: Only return images actually referenced in the response text
+                images_actually_used = self._extract_images_from_response_text(cleaned_response, image_reference_mapping)
+                
                 return {
                     "response": cleaned_response,
                     "chunks_used": chunks_used,
-                    "suggested_images": [],  # No suggestions available in fallback
-                    "images_used_for_response": images_used_for_response,
+                    "suggested_images": images_actually_used,
+                    "images_used_for_response": images_actually_used,
                     "image_reference_mapping": image_reference_mapping
                 }
             
