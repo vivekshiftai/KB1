@@ -18,8 +18,8 @@ from utils.image_processor import ImageProcessor
 from models.schemas import QueryRequest, QueryResponse, ImageData
 # Configuration constants
 MAX_ITERATIONS = 3
-BASE_CHUNK_SIZE = 2
-CHUNK_SIZE_INCREMENT = 1
+BASE_CHUNK_SIZE = 3  # Hardcoded to 3 chunks initially
+CHUNK_SIZE_INCREMENT = 1  # Increase by 2 if requery needed
 MIN_CONFIDENCE_SCORE = 0.6
 MIN_RESPONSE_LENGTH = 50
 HUMAN_REVIEW_THRESHOLD = 0.7
@@ -168,7 +168,7 @@ class LangGraphQueryProcessor:
             "current_query_index": 0,
             "iteration": 0,
             "max_iterations": MAX_ITERATIONS,
-            "current_chunk_size": BASE_CHUNK_SIZE,
+            "current_chunk_size": BASE_CHUNK_SIZE,  # Start with hardcoded 3 chunks
             "base_chunk_size": BASE_CHUNK_SIZE,
             "all_chunks": [],
             "current_chunks": [],
@@ -218,6 +218,7 @@ class LangGraphQueryProcessor:
         logger.info(f"=== STAGE: INITIALIZE QUERY ===")
         logger.info(f"Iteration: {state['iteration'] + 1}")
         logger.info(f"Collection: {state['collection_name']}")
+        logger.info(f"🎯 HARDCODED: Starting with {state['current_chunk_size']} chunks initially")
         
         # Check if collection exists
         if not self.vector_db.collection_exists(state["collection_name"]):
@@ -500,9 +501,26 @@ Please provide a comprehensive answer that addresses all aspects of the original
         """Decide next step based on validation results"""
         quality = state["response_quality"]
         iteration = state["iteration"]
+        confidence = quality["confidence_score"]
         
-        # If response is adequate and we're not in first iteration, finalize
-        if quality["is_adequate"] and iteration > 0:
+        # HARDCODED LOGIC: If we're on first iteration (3 chunks) and have decent response, finalize
+        if iteration == 0:  # First iteration with 3 chunks
+            # More lenient criteria for initial 3 chunks
+            initial_chunk_adequate = (
+                quality["has_content"] and
+                quality["uses_chunks"] and
+                confidence >= 0.5 and  # Lower threshold for initial chunks
+                quality["response_length"] > 30  # Shorter minimum length
+            )
+            
+            if initial_chunk_adequate:
+                logger.info(f"✅ HARDCODED: Initial 3 chunks provided adequate response (confidence: {confidence:.2f}), finalizing without requery")
+                return "finalize"
+            else:
+                logger.info(f"❌ Initial 3 chunks inadequate (confidence: {confidence:.2f}), will requery with more chunks")
+        
+        # If response is adequate in later iterations, finalize
+        if quality["is_adequate"]:
             logger.info("Response is adequate, proceeding to finalization")
             return "finalize"
         
@@ -543,13 +561,22 @@ Please decide:
 """
         
         # In a real implementation, this would be an interrupt for human input
-        # For now, we'll simulate the decision based on confidence
-        if confidence >= 0.8:
-            user_decision = "process"
-        elif confidence >= MIN_CONFIDENCE_SCORE:
-            user_decision = "requery"
+        # For now, we'll simulate the decision based on confidence and iteration
+        if iteration == 0:  # First iteration with 3 chunks
+            # More lenient for initial chunks
+            if confidence >= 0.5:
+                user_decision = "process"
+                logger.info(f"HARDCODED: Accepting initial 3-chunk response with confidence {confidence:.2f}")
+            else:
+                user_decision = "requery"
         else:
-            user_decision = "requery"
+            # Standard logic for subsequent iterations
+            if confidence >= 0.8:
+                user_decision = "process"
+            elif confidence >= MIN_CONFIDENCE_SCORE:
+                user_decision = "requery"
+            else:
+                user_decision = "requery"
         
         logger.info(f"Human decision: {user_decision}")
         state["user_decision"] = user_decision
@@ -571,8 +598,12 @@ Please decide:
         """Increase chunk size for next iteration"""
         current_size = state["current_chunk_size"]
         new_size = current_size + CHUNK_SIZE_INCREMENT
+        iteration = state["iteration"]
         
-        logger.info(f"Increasing chunk size from {current_size} to {new_size}")
+        if iteration == 0:
+            logger.info(f"🔄 HARDCODED: Initial 3 chunks were inadequate, increasing chunk size from {current_size} to {new_size}")
+        else:
+            logger.info(f"🔄 Increasing chunk size from {current_size} to {new_size} (iteration {iteration + 1})")
         
         state["current_chunk_size"] = new_size
         state["iteration"] += 1
@@ -643,15 +674,66 @@ Please decide:
                 # LLM service already did STRICT filtering - only images referenced in response text
                 suggested_image_data = []
                 logger.info(f"🎯 STRICT FILTERING: LLM service found {len(suggested_images)} images actually referenced in response text")
+                logger.info(f"🔍 DEBUG: Available image filenames: {[img.filename if hasattr(img, 'filename') else str(img) for img in all_images[:5]]}...")  # Show first 5
+                logger.info(f"🔍 DEBUG: Image reference mapping: {dict(list(image_reference_mapping.items())[:5])}...")  # Show first 5
+                logger.info(f"🔍 DEBUG: Suggested images to match: {suggested_images}")
+                logger.info(f"🔍 DEBUG: Total images available for matching: {len(all_images)}")
+                
+                # Show detailed info about first few images
+                for i, img in enumerate(all_images[:3]):
+                    if hasattr(img, 'filename'):
+                        logger.info(f"🔍 DEBUG: Image {i}: filename='{img.filename}', type={type(img)}")
+                    elif isinstance(img, dict):
+                        logger.info(f"🔍 DEBUG: Image {i}: dict with keys={list(img.keys())}")
+                        if 'filename' in img:
+                            logger.info(f"🔍 DEBUG: Image {i}: filename='{img['filename']}'")
+                        if 'original_filename' in img:
+                            logger.info(f"🔍 DEBUG: Image {i}: original_filename='{img['original_filename']}'")
+                    else:
+                        logger.info(f"🔍 DEBUG: Image {i}: {str(img)[:50]}... type={type(img)}")
                 
                 for img in all_images:
-                    img_filename = img.filename if hasattr(img, 'filename') else str(img)
+                    # Handle both ImageData objects and dict format
+                    if hasattr(img, 'filename'):
+                        img_filename = img.filename
+                    elif isinstance(img, dict) and 'filename' in img:
+                        img_filename = img['filename']
+                    else:
+                        img_filename = str(img)
+                    
                     # Check if this image corresponds to a referenced image
                     for suggested_ref in suggested_images:
-                        expected_filename = f"{suggested_ref.replace(' ', '_')}.jpg"
-                        if img_filename == expected_filename:
-                            suggested_image_data.append(img)
-                            logger.info(f"✅ Including referenced image: {img_filename}")
+                        found_match = False
+                        
+                        # Method 1: For pre-labeled images, check if original filename matches mapping
+                        if img_filename.startswith("labeled_"):
+                            # Extract the original filename (remove "labeled_" prefix)
+                            original_part = img_filename.replace("labeled_", "")
+                            original_filename = image_reference_mapping.get(suggested_ref)
+                            
+                            if original_filename and original_part == original_filename:
+                                suggested_image_data.append(img)
+                                logger.info(f"✅ Including pre-labeled image: {img_filename} for {suggested_ref} (original: {original_filename})")
+                                found_match = True
+                        
+                        # Method 2: Check for numbered filename format (image_1.jpg, image_2.jpg, etc.)
+                        if not found_match:
+                            expected_filename = f"{suggested_ref.replace(' ', '_')}.jpg"
+                            if img_filename == expected_filename:
+                                suggested_image_data.append(img)
+                                logger.info(f"✅ Including numbered image: {img_filename} for {suggested_ref}")
+                                found_match = True
+                        
+                        # Method 3: Check if the image has an 'original_filename' attribute that matches
+                        if not found_match and isinstance(img, dict):
+                            original_in_dict = img.get('original_filename')
+                            mapped_original = image_reference_mapping.get(suggested_ref)
+                            if original_in_dict and mapped_original and original_in_dict == mapped_original:
+                                suggested_image_data.append(img)
+                                logger.info(f"✅ Including image by original_filename: {img_filename} for {suggested_ref}")
+                                found_match = True
+                        
+                        if found_match:
                             break
                 
                 logger.info(f"🎯 FINAL RESULT: {len(suggested_image_data)} images actually referenced in response")
@@ -758,6 +840,7 @@ Please decide:
         logger.info(f"Collecting pre-labeled images from {len(chunks_to_search)} chunks")
         logger.info(f"Expected {expected_image_count} images based on LLM mapping: {list(image_reference_mapping.values())}")
         logger.info(f"Collecting tables only from referenced chunks: {chunks_used}")
+        logger.info(f"🔍 DEBUG: Chunk data format check - first chunk keys: {list(chunks_to_search[0].keys()) if chunks_to_search else 'No chunks'}")
         
         # Collect images from ALL chunks (since LLM saw all images)
         for i, chunk in enumerate(chunks_to_search):
