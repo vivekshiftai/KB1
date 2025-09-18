@@ -705,16 +705,14 @@ Please decide:
                     for suggested_ref in suggested_images:
                         found_match = False
                         
-                        # Method 1: For pre-labeled images, check if original filename matches mapping
-                        if img_filename.startswith("labeled_"):
-                            # Extract the original filename (remove "labeled_" prefix)
-                            original_part = img_filename.replace("labeled_", "")
-                            original_filename = image_reference_mapping.get(suggested_ref)
-                            
-                            if original_filename and original_part == original_filename:
-                                suggested_image_data.append(img)
-                                logger.info(f"✅ Including pre-labeled image: {img_filename} for {suggested_ref} (original: {original_filename})")
-                                found_match = True
+                        # Method 1: Direct mapping match (image_reference_mapping already has labeled_ filenames)
+                        expected_filename_from_mapping = image_reference_mapping.get(suggested_ref)
+                        logger.info(f"🔍 MATCHING: {suggested_ref} -> expected: '{expected_filename_from_mapping}', actual: '{img_filename}'")
+                        
+                        if expected_filename_from_mapping and img_filename == expected_filename_from_mapping:
+                            suggested_image_data.append(img)
+                            logger.info(f"✅ Including image by direct mapping: {img_filename} for {suggested_ref}")
+                            found_match = True
                         
                         # Method 2: Check for numbered filename format (image_1.jpg, image_2.jpg, etc.)
                         if not found_match:
