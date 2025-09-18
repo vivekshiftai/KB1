@@ -28,7 +28,7 @@ class ImageProcessor:
     def __init__(self):
         self.default_font_size = 32  # Increased from 20 to 32 for better visibility
         self.label_padding = 15  # Increased padding
-        self.label_height = 60  # Increased height to accommodate larger text
+        self.label_height = 100  # Increased height to accommodate larger text
         self.background_color = (255, 255, 255)  # White background
         self.text_color = (0, 0, 0)  # Black text
         
