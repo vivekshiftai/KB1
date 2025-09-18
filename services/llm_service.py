@@ -687,6 +687,8 @@ Respond with JSON:
                 # Replace original images with labeled ones
                 chunk_data["images"] = labeled_images
         
+        # Calculate total images after labeling
+        total_images = sum(len(chunk["images"]) for chunk in chunk_data_with_images)
         logger.info(f"🎯 PRE-LABELING COMPLETE: All {total_images} images now have labels")
         
         # Enhanced prompt for structured JSON response
@@ -694,7 +696,6 @@ Respond with JSON:
         
         # Create numbered image list for LLM context (now with labeled images)
         image_context = ""
-        total_images = sum(len(chunk["images"]) for chunk in chunk_data_with_images)
         logger.info(f"Total labeled images across all chunks: {total_images}")
         
         if total_images > 0:

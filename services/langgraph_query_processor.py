@@ -491,6 +491,8 @@ Please provide a comprehensive answer that addresses all aspects of the original
         }
         
         logger.info(f"Response validation - Confidence: {confidence:.2f}, Adequate: {is_adequate}, Questions addressed: {quality_metrics['mentions_individual_queries']}/{len(individual_queries)}")
+        logger.info(f"Validation details - has_content: {quality_metrics['has_content']}, uses_chunks: {quality_metrics['uses_chunks']}, min_confidence: {MIN_CONFIDENCE_SCORE}")
+        logger.info(f"Response length: {quality_metrics['response_length']}, chunks used count: {len(state['llm_response'].get('chunks_used', []))}")
         
         return state
     
