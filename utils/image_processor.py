@@ -26,9 +26,9 @@ class ImageProcessor:
     """Utility class for image processing operations"""
     
     def __init__(self):
-        self.default_font_size = 20
-        self.label_padding = 10
-        self.label_height = 40
+        self.default_font_size = 32  # Increased from 20 to 32 for better visibility
+        self.label_padding = 15  # Increased padding
+        self.label_height = 60  # Increased height to accommodate larger text
         self.background_color = (255, 255, 255)  # White background
         self.text_color = (0, 0, 0)  # Black text
         
@@ -70,19 +70,33 @@ class ImageProcessor:
             draw = ImageDraw.Draw(labeled_image)
             
             # Try to use a system font, fall back to default if not available
-            try:
-                # Try to find a nice font
-                font = ImageFont.truetype("arial.ttf", self.default_font_size)
-            except (OSError, IOError):
+            font = None
+            font_names = [
+                "arialbd.ttf",  # Arial Bold - best choice
+                "arial.ttf",    # Arial Regular
+                "calibrib.ttf", # Calibri Bold
+                "calibri.ttf",  # Calibri Regular
+                "Arial.ttf",    # Alternative Arial name
+                "tahoma.ttf",   # Tahoma
+                "verdana.ttf"   # Verdana
+            ]
+            
+            for font_name in font_names:
                 try:
-                    # Try alternative font names
-                    font = ImageFont.truetype("Arial.ttf", self.default_font_size)
+                    font = ImageFont.truetype(font_name, self.default_font_size)
+                    logger.info(f"Using font: {font_name} at size {self.default_font_size}")
+                    break
                 except (OSError, IOError):
-                    try:
-                        # Try system default
-                        font = ImageFont.load_default()
-                    except:
-                        font = None
+                    continue
+            
+            if font is None:
+                try:
+                    # Try system default with larger size
+                    font = ImageFont.load_default()
+                    logger.info("Using default system font")
+                except:
+                    font = None
+                    logger.warning("No font available, using basic text rendering")
             
             # Calculate text position (centered horizontally)
             if font:
@@ -91,9 +105,9 @@ class ImageProcessor:
                 text_width = bbox[2] - bbox[0]
                 text_height = bbox[3] - bbox[1]
             else:
-                # Fallback for default font
-                text_width = len(label_text) * 8  # Rough estimate
-                text_height = 12
+                # Fallback for default font - larger estimates for bigger text
+                text_width = len(label_text) * 16  # Increased estimate for larger text
+                text_height = 24  # Increased height estimate
             
             text_x = (original_width - text_width) // 2
             text_y = original_height + (self.label_height - text_height) // 2

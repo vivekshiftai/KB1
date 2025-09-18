@@ -710,8 +710,27 @@ Please decide:
                         logger.info(f"🔍 MATCHING: {suggested_ref} -> expected: '{expected_filename_from_mapping}', actual: '{img_filename}'")
                         
                         if expected_filename_from_mapping and img_filename == expected_filename_from_mapping:
-                            suggested_image_data.append(img)
-                            logger.info(f"✅ Including image by direct mapping: {img_filename} for {suggested_ref}")
+                            # Create a copy of the image with clean filename (image 1, image 2, etc.)
+                            from models.schemas import ImageData
+                            clean_filename = f"{suggested_ref}.jpg"  # e.g., "image 1.jpg"
+                            
+                            if hasattr(img, 'filename'):
+                                clean_img = ImageData(
+                                    filename=clean_filename,
+                                    data=img.data,
+                                    mime_type=img.mime_type,
+                                    size=img.size
+                                )
+                                suggested_image_data.append(clean_img)
+                                logger.info(f"✅ Including image with clean filename: {clean_filename} (was {img_filename}) for {suggested_ref}")
+                            else:
+                                # Handle dict format
+                                clean_img = img.copy() if isinstance(img, dict) else img
+                                if isinstance(clean_img, dict):
+                                    clean_img['filename'] = clean_filename
+                                suggested_image_data.append(clean_img)
+                                logger.info(f"✅ Including image with clean filename: {clean_filename} for {suggested_ref}")
+                            
                             found_match = True
                         
                         # Method 2: Check for numbered filename format (image_1.jpg, image_2.jpg, etc.)
