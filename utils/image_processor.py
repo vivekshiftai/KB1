@@ -26,9 +26,9 @@ class ImageProcessor:
     """Utility class for image processing operations"""
     
     def __init__(self):
-        self.default_font_size = 100  # Increased to 50px for maximum visibility
-        self.label_padding = 15  # Increased padding
-        self.label_height = 100  # Increased height to accommodate larger text
+        self.default_font_size = 100  # Doubled to 100px for maximum visibility
+        self.label_padding = 20  # Increased padding for larger text
+        self.label_height = 140  # Increased height to accommodate 100px text
         self.background_color = (255, 255, 255)  # White background
         self.text_color = (0, 0, 0)  # Black text
         
@@ -88,9 +88,10 @@ class ImageProcessor:
             for font_name in font_names:
                 try:
                     font = ImageFont.truetype(font_name, self.default_font_size)
-                    logger.info(f"Using font: {font_name} at size {self.default_font_size}px")
+                    logger.info(f"✅ Successfully loaded font: {font_name} at size {self.default_font_size}px")
                     break
                 except (OSError, IOError):
+                    logger.debug(f"Font {font_name} not available, trying next...")
                     continue
             
             if font is None:
@@ -108,10 +109,11 @@ class ImageProcessor:
                 bbox = draw.textbbox((0, 0), label_text, font=font)
                 text_width = bbox[2] - bbox[0]
                 text_height = bbox[3] - bbox[1]
+                logger.info(f"📏 Text dimensions: '{label_text}' = {text_width}x{text_height}px with {self.default_font_size}px font")
             else:
-                # Fallback for default font - estimates for 50px text
-                text_width = len(label_text) * 25  # Estimate for 50px text
-                text_height = 40  # Height estimate for 50px text
+                # Fallback for default font - estimates for 100px text
+                text_width = len(label_text) * 50  # Estimate for 100px text
+                text_height = 80  # Height estimate for 100px text
             
             text_x = (original_width - text_width) // 2
             text_y = original_height + (self.label_height - text_height) // 2
@@ -135,8 +137,9 @@ class ImageProcessor:
                 size=len(output_buffer.getvalue())
             )
             
-            logger.info(f"Successfully added label '{label_text}' to image {image_data.filename}")
-            logger.info(f"Original size: {original_width}x{original_height}, New size: {original_width}x{new_height}")
+            logger.info(f"✅ Successfully added label '{label_text}' to image {image_data.filename}")
+            logger.info(f"📐 Image size: {original_width}x{original_height} → {original_width}x{new_height} (added {self.label_height}px label area)")
+            logger.info(f"🎨 Font size used: {self.default_font_size}px")
             
             return labeled_image_data
             
