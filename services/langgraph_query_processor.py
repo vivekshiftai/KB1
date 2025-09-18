@@ -656,12 +656,11 @@ Please decide:
                 logger.info(f"Referenced images: {suggested_images}")
                 logger.info(f"Returned image filenames: {[img.filename if hasattr(img, 'filename') else str(img) for img in suggested_image_data]}")
                 
-                # Add labels to images before returning them
-                logger.info("🏷️ Adding labels to referenced images...")
-                labeled_images = self.image_processor.add_labels_to_images(suggested_image_data, image_reference_mapping)
-                logger.info(f"✅ Labeled {len(labeled_images)} images with reference names")
+                # Images are already labeled from LLM service - just return the pre-labeled ones
+                logger.info("📋 Using pre-labeled images that LLM already saw...")
+                logger.info(f"✅ Returning {len(suggested_image_data)} pre-labeled images")
                 
-                images = labeled_images
+                images = suggested_image_data
             else:
                 logger.info(f"❌ No images referenced in response text - returning empty list")
                 images = []
@@ -722,23 +721,29 @@ Please decide:
         return state
     
     def _collect_media_from_chunks(self, state: QueryState) -> tuple[List[ImageData], List[str]]:
-        """Collect images from all chunks and tables from referenced chunks"""
+        """Collect pre-labeled images and tables from processed chunks"""
         images = []
         tables = []
         seen_image_filenames = set()
         
-        # Get chunks that were actually processed by LLM service (if available)
+        # Get the chunk data that was processed by LLM service (contains pre-labeled images)
         processed_chunks = state["llm_response"].get("processed_chunks", [])
         current_chunks = state.get("current_chunks", [])
         chunks_used = state["llm_response"].get("chunks_used", [])
         
-        # Use processed chunks if available (more complete), otherwise fall back to current_chunks
-        if processed_chunks and isinstance(processed_chunks, list):
+        # Check if LLM service provided chunk_data_with_images in the response
+        chunk_data_with_images = state["llm_response"].get("chunk_data_with_images", [])
+        
+        if chunk_data_with_images:
+            logger.info(f"🎯 Using pre-processed chunk data with labeled images from LLM service")
+            logger.info(f"Found {len(chunk_data_with_images)} chunks with pre-labeled images")
+            chunks_to_search = chunk_data_with_images
+        elif processed_chunks and isinstance(processed_chunks, list):
             chunks_to_search = processed_chunks
             logger.info(f"Using {len(processed_chunks)} processed chunks from LLM service")
         else:
             chunks_to_search = current_chunks
-            logger.info(f"Using {len(current_chunks)} current chunks (processed chunks not available)")
+            logger.info(f"Using {len(current_chunks)} current chunks (fallback)")
         
         if not isinstance(chunks_to_search, list):
             logger.warning(f"chunks_to_search is not a list: {type(chunks_to_search)}")
@@ -748,7 +753,7 @@ Please decide:
         image_reference_mapping = state["llm_response"].get("image_reference_mapping", {})
         expected_image_count = len(image_reference_mapping)
         
-        logger.info(f"Collecting images from all {len(chunks_to_search)} chunks (LLM had access to all images)")
+        logger.info(f"Collecting pre-labeled images from {len(chunks_to_search)} chunks")
         logger.info(f"Expected {expected_image_count} images based on LLM mapping: {list(image_reference_mapping.values())}")
         logger.info(f"Collecting tables only from referenced chunks: {chunks_used}")
         
@@ -758,17 +763,37 @@ Please decide:
                 logger.warning(f"Skipping non-dict chunk: {type(chunk)}")
                 continue
                 
-            chunk_heading = chunk.get("metadata", {}).get("heading", f"Chunk {i+1}")
+            # Handle different chunk formats
+            if "heading" in chunk:
+                # This is chunk_data_with_images format (pre-labeled)
+                chunk_heading = chunk.get("heading", f"Chunk {i+1}")
+                chunk_images = chunk.get("images", [])
+            else:
+                # This is regular chunk format
+                chunk_heading = chunk.get("metadata", {}).get("heading", f"Chunk {i+1}")
+                chunk_images = chunk.get("embedded_images", [])
             
             # Always collect images from this chunk
-            embedded_images = chunk.get("embedded_images", [])
-            if isinstance(embedded_images, list) and embedded_images:
-                logger.info(f"Found {len(embedded_images)} images in chunk '{chunk_heading}'")
-                for img in embedded_images:
-                    if hasattr(img, 'filename'):
+            if isinstance(chunk_images, list) and chunk_images:
+                logger.info(f"Found {len(chunk_images)} images in chunk '{chunk_heading}'")
+                for img in chunk_images:
+                    # Handle pre-labeled images (dict format) or regular ImageData objects
+                    if isinstance(img, dict):
+                        original_filename = img.get('filename', str(img))
+                        # Convert dict to ImageData for consistency
+                        from models.schemas import ImageData
+                        img_data = ImageData(
+                            filename=img['filename'],
+                            data=img['data'],
+                            mime_type=img['mime_type'],
+                            size=img['size']
+                        )
+                    elif hasattr(img, 'filename'):
                         original_filename = img.filename
+                        img_data = img
                     else:
                         original_filename = str(img)
+                        img_data = img
                     
                     if original_filename not in seen_image_filenames:
                         # Find the numbered name for this image from the mapping
@@ -779,31 +804,29 @@ Please decide:
                                 break
                         
                         if numbered_name:
-                            # Create a copy of the image with the numbered filename
-                            if hasattr(img, 'filename'):
-                                # Create new ImageData object with numbered filename
-                                from models.schemas import ImageData
-                                numbered_filename = f"{numbered_name}.jpg"
-                                numbered_img = ImageData(
-                                    filename=numbered_filename,  # e.g., "image 1.jpg"
-                                    data=img.data,
-                                    mime_type=img.mime_type,
-                                    size=img.size
-                                )
-                                images.append(numbered_img)
-                                logger.info(f"✓ CONVERTED: {original_filename} -> {numbered_filename} from chunk '{chunk_heading}'")
-                                logger.info(f"✓ NEW IMAGE OBJECT: filename='{numbered_img.filename}', size={numbered_img.size}, type={numbered_img.mime_type}")
+                            # For pre-labeled images, they should already have the correct filename
+                            if original_filename.startswith("labeled_"):
+                                # Image is already pre-labeled, use as-is
+                                images.append(img_data)
+                                logger.info(f"✓ PRE-LABELED: Using {original_filename} from chunk '{chunk_heading}'")
                             else:
-                                # Handle dict format
-                                numbered_img = img.copy() if isinstance(img, dict) else img
-                                numbered_filename = f"{numbered_name}.jpg"
-                                if isinstance(numbered_img, dict):
-                                    numbered_img['filename'] = numbered_filename
-                                images.append(numbered_img)
-                                logger.info(f"✓ CONVERTED (dict): {original_filename} -> {numbered_filename} from chunk '{chunk_heading}'")
+                                # Create numbered filename (fallback case)
+                                numbered_filename = f"{numbered_name.replace(' ', '_')}.jpg"
+                                if hasattr(img_data, 'filename'):
+                                    numbered_img = ImageData(
+                                        filename=numbered_filename,
+                                        data=img_data.data,
+                                        mime_type=img_data.mime_type,
+                                        size=img_data.size
+                                    )
+                                    images.append(numbered_img)
+                                    logger.info(f"✓ CONVERTED: {original_filename} -> {numbered_filename} from chunk '{chunk_heading}'")
+                                else:
+                                    images.append(img_data)
+                                    logger.info(f"✓ FALLBACK: Using original {original_filename}")
                         else:
                             # No mapping found, use original
-                            images.append(img)
+                            images.append(img_data)
                             logger.warning(f"❌ NO MAPPING: {original_filename} not found in mapping {list(image_reference_mapping.keys())}, using original filename")
                         
                         seen_image_filenames.add(original_filename)
@@ -821,7 +844,12 @@ Please decide:
                     break
             
             if chunk_is_referenced:
-                chunk_tables = chunk.get("tables", [])
+                # Handle different chunk formats for tables
+                if "tables" in chunk:
+                    chunk_tables = chunk.get("tables", [])
+                else:
+                    chunk_tables = chunk.get("tables", [])
+                    
                 if isinstance(chunk_tables, list):
                     tables.extend(chunk_tables)
                     logger.info(f"Added {len(chunk_tables)} tables from referenced chunk '{chunk_heading}'")

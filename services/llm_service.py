@@ -18,6 +18,7 @@ from azure.ai.inference import ChatCompletionsClient
 from azure.ai.inference.models import SystemMessage, UserMessage
 from azure.core.credentials import AzureKeyCredential
 from config import settings
+from utils.image_processor import ImageProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,9 @@ class LLMService:
         # Azure AI Configuration
         self.endpoint = "https://chgai.services.ai.azure.com/models"
         self.api_version = "2024-05-01-preview"
+        
+        # Initialize image processor for pre-labeling
+        self.image_processor = ImageProcessor()
         
         # Model configurations for different use cases
         self.models = {
@@ -603,13 +607,73 @@ Respond with JSON:
         logger.info(f"Context preparation complete: {len(context_parts)} context sections, {len(all_available_images)} total images")
         logger.info(f"All available images: {all_available_images}")
         
+        # STEP 1: PRE-LABEL ALL IMAGES BEFORE SENDING TO LLM
+        logger.info("🏷️ PRE-LABELING IMAGES BEFORE SENDING TO LLM...")
+        
+        # Create image reference mapping first
+        image_reference_mapping = {}
+        image_counter = 1
+        for img_filename in all_available_images:
+            image_reference_mapping[f"image {image_counter}"] = img_filename
+            image_counter += 1
+        
+        logger.info(f"Created image reference mapping: {image_reference_mapping}")
+        
+        # Label all images in chunk_data_with_images
+        for chunk_data in chunk_data_with_images:
+            if chunk_data.get("images"):
+                labeled_images = []
+                for img in chunk_data["images"]:
+                    # Find the numbered reference for this image
+                    img_filename = img['filename']
+                    numbered_reference = None
+                    for ref, filename in image_reference_mapping.items():
+                        if filename == img_filename:
+                            numbered_reference = ref
+                            break
+                    
+                    if numbered_reference:
+                        # Convert dict to ImageData for labeling
+                        from models.schemas import ImageData
+                        image_data = ImageData(
+                            filename=img['filename'],
+                            data=img['data'],
+                            mime_type=img['mime_type'],
+                            size=img['size']
+                        )
+                        
+                        # Label the image
+                        labeled_image_data = self.image_processor.add_label_to_image(image_data, numbered_reference)
+                        
+                        # Convert back to dict format for chunk storage
+                        labeled_img_dict = {
+                            'filename': labeled_image_data.filename,
+                            'data': labeled_image_data.data,
+                            'mime_type': labeled_image_data.mime_type,
+                            'size': labeled_image_data.size,
+                            'original_filename': img_filename,  # Keep track of original
+                            'image_number': image_counter,
+                            'description': f"{numbered_reference}: {img_filename}"
+                        }
+                        labeled_images.append(labeled_img_dict)
+                        logger.info(f"✅ Pre-labeled {img_filename} as '{numbered_reference}'")
+                    else:
+                        # Keep original if no mapping found
+                        labeled_images.append(img)
+                        logger.warning(f"No reference mapping found for {img_filename}")
+                
+                # Replace original images with labeled ones
+                chunk_data["images"] = labeled_images
+        
+        logger.info(f"🎯 PRE-LABELING COMPLETE: All {total_images} images now have labels")
+        
         # Enhanced prompt for structured JSON response
         table_info = "Full documentation data including tables, specifications, and all technical details has been included in the context for comprehensive analysis."
         
-        # Create numbered image list for LLM context
+        # Create numbered image list for LLM context (now with labeled images)
         image_context = ""
         total_images = sum(len(chunk["images"]) for chunk in chunk_data_with_images)
-        logger.info(f"Total images across all chunks: {total_images}")
+        logger.info(f"Total labeled images across all chunks: {total_images}")
         
         if total_images > 0:
             # Create numbered list of available images for LLM
@@ -959,12 +1023,14 @@ Quality and formatting requirements:
                         parsed_response["suggested_images"] = images_actually_used
                         parsed_response["images_used_for_response"] = images_actually_used
                         parsed_response["image_reference_mapping"] = image_reference_mapping
+                        parsed_response["chunk_data_with_images"] = chunk_data_with_images  # Include pre-labeled images
                         
                         logger.info(f"Successfully parsed JSON response with {len(parsed_response.get('chunks_used', []))} referenced chunks")
                         logger.info(f"Available images: {all_available_images}")
                         logger.info(f"LLM suggested images: {suggested_images}")
                         logger.info(f"Images used for response: {images_used_for_response}")
                         logger.info(f"Image reference mapping: {image_reference_mapping}")
+                        logger.info(f"Chunk data with pre-labeled images: {len(chunk_data_with_images)} chunks")
                         return parsed_response
                     else:
                         logger.warning("JSON response missing required fields, using fallback")
@@ -994,6 +1060,7 @@ Quality and formatting requirements:
                         parsed_response["suggested_images"] = images_actually_used
                         parsed_response["images_used_for_response"] = images_actually_used
                         parsed_response["image_reference_mapping"] = image_reference_mapping
+                        parsed_response["chunk_data_with_images"] = chunk_data_with_images  # Include pre-labeled images
                         logger.info("Successfully parsed JSON after aggressive cleaning")
                         return parsed_response
                 except Exception as e2:
@@ -1012,7 +1079,8 @@ Quality and formatting requirements:
                     "chunks_used": chunks_used,
                     "suggested_images": images_actually_used,
                     "images_used_for_response": images_actually_used,
-                    "image_reference_mapping": image_reference_mapping
+                    "image_reference_mapping": image_reference_mapping,
+                    "chunk_data_with_images": chunk_data_with_images  # Include pre-labeled images
                 }
             
         except Exception as e:
