@@ -26,7 +26,7 @@ class ImageProcessor:
     """Utility class for image processing operations"""
     
     def __init__(self):
-        self.default_font_size = 32  # Increased from 20 to 32 for better visibility
+        self.default_font_size = 100  # Increased to 50px for maximum visibility
         self.label_padding = 15  # Increased padding
         self.label_height = 100  # Increased height to accommodate larger text
         self.background_color = (255, 255, 255)  # White background
@@ -72,19 +72,23 @@ class ImageProcessor:
             # Try to use a system font, fall back to default if not available
             font = None
             font_names = [
-                "arialbd.ttf",  # Arial Bold - best choice
-                "arial.ttf",    # Arial Regular
-                "calibrib.ttf", # Calibri Bold
-                "calibri.ttf",  # Calibri Regular
-                "Arial.ttf",    # Alternative Arial name
-                "tahoma.ttf",   # Tahoma
-                "verdana.ttf"   # Verdana
+                "arialbd.ttf",   # Arial Bold - best choice
+                "calibrib.ttf",  # Calibri Bold
+                "tahomabd.ttf",  # Tahoma Bold
+                "verdanab.ttf",  # Verdana Bold
+                "timesbd.ttf",   # Times New Roman Bold
+                "arial.ttf",     # Arial Regular (fallback)
+                "calibri.ttf",   # Calibri Regular (fallback)
+                "Arial.ttf",     # Alternative Arial name
+                "tahoma.ttf",    # Tahoma
+                "verdana.ttf"    # Verdana
             ]
             
+            # Try fonts in priority order (bold fonts first)
             for font_name in font_names:
                 try:
                     font = ImageFont.truetype(font_name, self.default_font_size)
-                    logger.info(f"Using font: {font_name} at size {self.default_font_size}")
+                    logger.info(f"Using font: {font_name} at size {self.default_font_size}px")
                     break
                 except (OSError, IOError):
                     continue
@@ -105,9 +109,9 @@ class ImageProcessor:
                 text_width = bbox[2] - bbox[0]
                 text_height = bbox[3] - bbox[1]
             else:
-                # Fallback for default font - larger estimates for bigger text
-                text_width = len(label_text) * 16  # Increased estimate for larger text
-                text_height = 24  # Increased height estimate
+                # Fallback for default font - estimates for 50px text
+                text_width = len(label_text) * 25  # Estimate for 50px text
+                text_height = 40  # Height estimate for 50px text
             
             text_x = (original_width - text_width) // 2
             text_y = original_height + (self.label_height - text_height) // 2
