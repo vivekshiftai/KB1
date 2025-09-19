@@ -735,7 +735,7 @@ Please examine these images carefully and use them to:
 - Always put the image marker on a separate line immediately after the reference
 
 Image embedding guidelines:
-- Keep natural language references: "as shown in image X", "refer to image X", "see image X"
+- Keep natural language references: "as shown in below image", "refer to below image", "see below image"
 - Add [IMAGE:image X.jpg] marker on the next line after each reference
 - Use the format [IMAGE:image X.jpg] where X is the image number
 - Focus on procedural images that help users complete the specific task
