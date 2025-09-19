@@ -728,18 +728,18 @@ Please examine these images carefully and use them to:
 - Provide visual context for procedures and instructions
 - Reference specific visual elements when explaining steps
 - Enhance your answer with details visible in the images
-- IMPORTANT: When referencing images, embed them directly in your response using the format [IMAGE:image X.jpg]
-- Replace "as shown in image 1" with "as shown in [IMAGE:image 1.jpg]"
-- Replace "refer to image 2" with "refer to [IMAGE:image 2.jpg]"
-- Replace "see image 3" with "see [IMAGE:image 3.jpg]"
-- You can place image markers anywhere in the text where they make sense contextually
+- IMPORTANT: When referencing images, use natural language first, then add the image marker on the next line
+- Format: "Turn the main switch as shown in image 1\\n[IMAGE:image 1.jpg]"
+- Format: "Check the control panel refer to image 2\\n[IMAGE:image 2.jpg]" 
+- Format: "Position the dough see image 3\\n[IMAGE:image 3.jpg]"
+- Always put the image marker on a separate line immediately after the reference
 
-Image selection guidelines:
-- Embed image markers directly in your response text where they are most relevant
+Image embedding guidelines:
+- Keep natural language references: "as shown in image X", "refer to image X", "see image X"
+- Add [IMAGE:image X.jpg] marker on the next line after each reference
 - Use the format [IMAGE:image X.jpg] where X is the image number
-- Place images contextually: "Check the power switch [IMAGE:image 1.jpg]" or "The control panel [IMAGE:image 2.jpg] shows..."
 - Focus on procedural images that help users complete the specific task
-- Be highly selective - only embed images that directly support the explanation
+- Be highly selective - only reference images that directly support the explanation
 - For safety information or error codes, provide the details in text rather than suggesting warning symbol images"""
         
         # Add query analysis information if available
@@ -789,15 +789,16 @@ Response formatting:
 
 Respond in JSON format:
 {{
-    "response": "**Main Topic**\\n\\nI. **High Level Section**\\n1. First step with details [IMAGE:image 1.jpg]\\n2. Second step with details [IMAGE:image 2.jpg]\\n\\nII. **Another High Level Section**\\n1. Check the control panel [IMAGE:image 3.jpg]\\n• Sub-detail\\n• Another sub-detail",
+    "response": "**Main Topic**\\n\\nI. **High Level Section**\\n1. First step with details as shown in image 1\\n[IMAGE:image 1.jpg]\\n2. Second step with details refer to image 2\\n[IMAGE:image 2.jpg]\\n\\nII. **Another High Level Section**\\n1. Check the control panel see image 3\\n[IMAGE:image 3.jpg]\\n• Sub-detail\\n• Another sub-detail",
     "chunks_used": ["section headings you referenced"],
     "suggested_images": ["image 1", "image 2", "image 3"]
 }}
 
 Important: 
 - Use **bold** for headings with Roman numerals for major sections, numbered steps for procedures
-- Embed [IMAGE:image X.jpg] markers directly in your response text where images are most relevant
-- The suggested_images field should list the images you embedded in the response text
+- Keep natural language references like "as shown in image 1" in the text
+- Add [IMAGE:image X.jpg] markers on the next line after each reference
+- The suggested_images field should list the images you referenced in the response text
 - Never include "Suggested Images" or "Chunks Used" sections in your response text"""
         
         # Add query analysis guidance if available
@@ -828,14 +829,14 @@ Available images: {", ".join(numbered_image_list)}
 Important: These images contain crucial visual information. Please:
 - Examine each image to understand what it shows (controls, screens, equipment, procedures)
 - Incorporate visual details into your answer where relevant
-- CRITICAL: Embed images directly using [IMAGE:image X.jpg] markers in your response text
-- Place image markers contextually where they make most sense in the flow
-- Example: "Turn the power switch [IMAGE:image 1.jpg] to the ON position"
+- CRITICAL: Use natural language references first, then add image markers on the next line
+- Format: "Turn the power switch as shown in image 1\\n[IMAGE:image 1.jpg]"
+- Format: "Check the control panel refer to image 2\\n[IMAGE:image 2.jpg]"
 
 Image embedding rules:
-- Use [IMAGE:image X.jpg] format where X is the image number
-- Embed images inline with the text where they are most relevant
-- The suggested_images field should list all images you embedded in the response
+- Keep natural language: "as shown in image X", "refer to image X", "see image X"
+- Add [IMAGE:image X.jpg] marker on the next line after each reference
+- The suggested_images field should list all images you referenced in the response
 - Avoid suggesting error code tables, warning symbols, or emergency indicators unless the query is about errors or safety
 - Focus on images showing procedures, controls, or equipment relevant to the user's task
 - Be highly selective - suggest only images that provide practical value for this specific query

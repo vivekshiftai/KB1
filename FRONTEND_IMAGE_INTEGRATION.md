@@ -14,13 +14,16 @@ The LLM generates special markers directly in its response:
 ```
 To start the machine, follow these steps:
 
-1. Check the power switch [IMAGE:image 1.jpg]
-2. Verify the pressure gauge [IMAGE:image 2.jpg]
-3. Press the start button [IMAGE:image 3.jpg]
+1. Check the power switch as shown in image 1
+[IMAGE:image 1.jpg]
+2. Verify the pressure gauge refer to image 2
+[IMAGE:image 2.jpg]
+3. Press the start button see image 3
+[IMAGE:image 3.jpg]
 ```
 
 ### No Backend Processing Needed
-The LLM generates the markers directly, so the frontend receives the response ready for image embedding.
+The LLM generates both the natural language references and the image markers directly, so the frontend receives the response ready for image embedding.
 
 ## Frontend Implementation
 
@@ -101,10 +104,19 @@ Each image in the response contains:
 }
 ```
 
-## LLM Flexibility
-The LLM can now intelligently place image markers anywhere in the text:
-- `Check the power switch [IMAGE:image 1.jpg]`
-- `The control panel [IMAGE:image 2.jpg] shows the current status`
-- `Follow these steps: 1. Turn on [IMAGE:image 1.jpg] 2. Wait for [IMAGE:image 2.jpg]`
+## LLM Response Format
+The LLM generates responses with natural language references followed by image markers:
 
-The LLM decides the best placement for optimal user experience.
+**Example patterns:**
+```
+Turn the main switch as shown in image 1
+[IMAGE:image 1.jpg]
+
+Check the control panel refer to image 2  
+[IMAGE:image 2.jpg]
+
+Position the dough see image 3
+[IMAGE:image 3.jpg]
+```
+
+The LLM maintains readable text while providing clear image markers for the frontend to process.
