@@ -2893,32 +2893,19 @@ Provide the JSON object with the rules array."""
 
             async with self._api_semaphore:
 
-                response = client.complete(
-                    messages=[
-
-                        SystemMessage(content=system_prompt),
-
-                        UserMessage(content=user_prompt)
-
-                    ],
-
-                    max_tokens=self.max_completion_tokens,
-
-                    temperature=0.1,
-
-                    top_p=0.1,
-
-                    presence_penalty=0.0,
-
-                    frequency_penalty=0.0,
-
-                    model=model_config["name"]
-
+                # Use maximum tokens for generation models, limited tokens for others
+                max_tokens = None if model_config["name"] in ["o3-mini", "gpt-4o-mini"] else self.max_completion_tokens
+                
+                raw_response = await self._make_api_call(
+                    client, 
+                    model_config["name"], 
+                    system_prompt, 
+                    user_prompt, 
+                    max_tokens, 
+                    temperature=0.1
                 )
-
-            
-
-            raw_response = response.choices[0].message.content.strip()
+                
+                logger.info(f"Used max_tokens={max_tokens} for rules model {model_config['name']}")
 
             logger.info(f"Raw LLM response for rules using {model_config['name']}: {raw_response[:200]}...")
 
