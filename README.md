@@ -1,13 +1,16 @@
 # PDF Intelligence Platform
 
-A comprehensive backend API system that processes PDF manuals using MinerU, stores them in vector databases, and provides intelligent querying capabilities for IoT device documentation, rules generation, maintenance schedules, and safety information.
+A comprehensive backend API system that processes PDF manuals using MinerU, stores them in vector databases, and provides intelligent querying capabilities with advanced image processing and inline image references for IoT device documentation, rules generation, maintenance schedules, and safety information.
 
 ## 🚀 Features
 
 - **PDF Processing**: Upload and process PDF manuals using MinerU with CPU-based local inference
 - **Intelligent Chunking**: Heading-based content chunking with image and table extraction
+- **Advanced Image Processing**: Automatic image labeling with customizable fonts and sizes
+- **Inline Image References**: LLM generates natural language with embedded image markers
 - **Vector Storage**: ChromaDB integration with efficient similarity search
-- **Smart Querying**: GPT-4 powered intelligent responses with context awareness
+- **Smart Querying**: GPT-4 powered intelligent responses with context awareness and image integration
+- **LangGraph Workflow**: Advanced query processing with validation and retry logic
 - **Rules Generation**: Automated IoT monitoring rule creation from technical documentation
 - **Maintenance Scheduling**: Extract and structure maintenance tasks from manuals
 - **Safety Information**: Comprehensive safety guideline generation
@@ -17,8 +20,9 @@ A comprehensive backend API system that processes PDF manuals using MinerU, stor
 ## 📋 Prerequisites
 
 - Python 3.8+
-- OpenAI API key
+- Azure OpenAI API key (or OpenAI API key)
 - Git
+- PIL/Pillow for image processing
 
 ## 🛠️ Installation
 
@@ -59,12 +63,16 @@ A comprehensive backend API system that processes PDF manuals using MinerU, stor
 Create a `.env` file in the `project` directory with the following variables:
 
 ```bash
-# Required
-OPENAI_API_KEY=your_openai_key_here
+# Required - Azure OpenAI Configuration
+AZURE_OPENAI_ENDPOINT=your_azure_endpoint_here
+AZURE_OPENAI_KEY=your_azure_key_here
 
-# Optional (Azure OpenAI fallback)
-AZURE_OPENAI_ENDPOINT=your_azure_endpoint_optional
-AZURE_OPENAI_KEY=your_azure_key_optional
+# Model Configuration
+MAINTENANCE_MODEL_NAME=your_model_name
+RULES_MODEL_NAME=your_model_name
+SAFETY_MODEL_NAME=your_model_name
+QUERY_MODEL_NAME=your_model_name
+ANALYSIS_MODEL_NAME=your_model_name
 
 # Database Configuration
 VECTOR_DB_TYPE=chromadb
@@ -160,6 +168,36 @@ curl -X POST "http://localhost:8000/generate-maintenance/manual.pdf"
 curl -X POST "http://localhost:8000/generate-safety/manual.pdf"
 ```
 
+## 🖼️ Image Integration
+
+The system provides advanced image processing and integration:
+
+### Response Format
+Queries return responses with inline image references:
+
+```json
+{
+  "success": true,
+  "response": "Turn the main switch as shown in below image\n[IMAGE:image 1.jpg]\nCheck the control panel refer to below image\n[IMAGE:image 2.jpg]",
+  "images": [
+    {
+      "filename": "image 1.jpg",
+      "data": "base64-encoded-image-data",
+      "mime_type": "image/jpeg",
+      "size": 12345
+    }
+  ],
+  "suggested_images": ["image 1", "image 2"]
+}
+```
+
+### Image Features
+- **Pre-labeled Images**: Images are labeled before LLM processing
+- **Natural References**: Uses "as shown in below image" phrasing
+- **Image Markers**: `[IMAGE:filename.jpg]` markers for frontend parsing
+- **Clean Filenames**: Simple names like "image 1.jpg", "image 2.jpg"
+- **Bold Labels**: 28px bold text labels on white background extensions
+
 ## 🏗️ Architecture
 
 The platform follows a modular architecture:
@@ -177,14 +215,17 @@ project/
 │   ├── maintenance.py  # Maintenance scheduling
 │   └── safety.py       # Safety information
 ├── services/           # Core business logic
-│   ├── pdf_processor.py # PDF processing with MinerU
-│   ├── vector_db.py    # Vector database operations
-│   ├── chunking.py     # Content chunking logic
-│   └── llm_service.py  # LLM integration
+│   ├── pdf_processor.py        # PDF processing with MinerU
+│   ├── vector_db.py           # Vector database operations
+│   ├── chunking.py            # Content chunking logic
+│   ├── llm_service.py         # LLM integration with image processing
+│   └── langgraph_query_processor.py # Advanced query workflow
 ├── models/             # Pydantic schemas
 │   └── schemas.py      # Request/response models
 └── utils/              # Helper functions
-    └── helpers.py      # Utility functions
+    ├── helpers.py      # Utility functions
+    ├── cpu_optimizer.py # CPU optimization utilities
+    └── image_processor.py # Image labeling and processing
 ```
 
 ## 🔧 Key Features
@@ -200,10 +241,19 @@ project/
 - Efficient similarity search with sentence-transformers embeddings
 - Separate collections per PDF for organized storage
 
+### Image Processing & Integration
+- Automatic image labeling with customizable fonts and sizes (28px bold text)
+- Pre-labeling of images before LLM processing for consistency
+- Clean filename generation (image 1.jpg, image 2.jpg) for user-friendly responses
+- Inline image reference markers for frontend integration
+- Natural language references with embedded image markers
+
 ### LLM Integration
-- GPT-4 powered intelligent responses
-- Context-aware query processing
+- Azure OpenAI GPT-4 powered intelligent responses
+- Context-aware query processing with image analysis
+- LangGraph workflow for advanced query processing with validation and retry logic
 - Structured data generation for rules, maintenance, and safety
+- Hardcoded 3-chunk initial processing for faster responses
 
 ### Production Features
 - Comprehensive error handling and detailed logging with structured output
@@ -222,8 +272,8 @@ project/
    pip install magic-pdf
    ```
 
-2. **OpenAI API key not set**
-   - Ensure your `.env` file contains a valid `OPENAI_API_KEY`
+2. **Azure OpenAI API key not set**
+   - Ensure your `.env` file contains valid `AZURE_OPENAI_ENDPOINT` and `AZURE_OPENAI_KEY`
 
 3. **Port already in use**
    - Change the port in `main.py` or kill the process using port 8000
@@ -231,6 +281,11 @@ project/
 4. **Memory issues with large PDFs**
    - Reduce `MAX_CHUNKS_PER_BATCH` in your `.env` file
    - Ensure sufficient RAM (recommended: 8GB+)
+
+5. **Image processing issues**
+   - Ensure PIL/Pillow is installed: `pip install Pillow`
+   - Check logs for font loading issues
+   - Images will use fallback fonts if system fonts unavailable
 
 ### Logs
 - Application logs are written to `app.log` in the project directory

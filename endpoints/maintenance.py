@@ -47,35 +47,26 @@ async def generate_maintenance_schedule(pdf_name: str = Path(..., description="N
             "maintenance list", "maintenance tasks", "maintenance schedules", "maintenance procedure"
         ]
         
-        # Query for maintenance-relevant chunks using keywords
-        maintenance_chunks = []
-        for keyword in maintenance_keywords:  # Use all 4 maintenance keywords
-            try:
-                keyword_chunks = await vector_db.query_chunks(
-                    collection_name=collection_name,
-                    query=keyword,
-                    top_k=3  # Fetch 3 chunks per keyword (12 total)
-                )
-                maintenance_chunks.extend(keyword_chunks)
-                logger.info(f"Found {len(keyword_chunks)} chunks for keyword: {keyword}")
-            except Exception as e:
-                logger.warning(f"Error querying for keyword '{keyword}': {str(e)}")
-                continue
+        # Create combined query from all keywords
+        combined_query = " ".join(maintenance_keywords)
+        logger.info(f"Searching with combined query: {combined_query}")
         
-        # Remove duplicates and get top 10 chunks
-        unique_chunks = []
-        seen_chunks = set()
-        for chunk in maintenance_chunks:
-            chunk_id = chunk.get("metadata", {}).get("chunk_index", "")
-            if chunk_id not in seen_chunks:
-                unique_chunks.append(chunk)
-                seen_chunks.add(chunk_id)
+        # Query for maintenance-relevant chunks using combined keywords
+        try:
+            maintenance_chunks = await vector_db.query_chunks(
+                collection_name=collection_name,
+                query=combined_query,
+                top_k=12  # Fetch top 12 chunks in single query
+            )
+            logger.info(f"Found {len(maintenance_chunks)} chunks for combined maintenance query")
+        except Exception as e:
+            logger.warning(f"Error querying with combined keywords: {str(e)}")
+            maintenance_chunks = []
         
-        # Sort by relevance (lower distance = higher relevance) and take top 10
-        unique_chunks.sort(key=lambda x: x.get("distance", 1.0))
-        top_maintenance_chunks = unique_chunks[:10]  # Take top 10 chunks
+        # Take top 12 chunks (no deduplication needed since single query)
+        top_maintenance_chunks = maintenance_chunks[:12]
         
-        logger.info(f"Found {len(top_maintenance_chunks)} unique maintenance-relevant chunks out of {len(maintenance_chunks)} total chunks")
+        logger.info(f"Selected {len(top_maintenance_chunks)} maintenance-relevant chunks from single query")
         
         if not top_maintenance_chunks:
             logger.warning("No maintenance-relevant chunks found, falling back to general chunks")
@@ -93,9 +84,25 @@ async def generate_maintenance_schedule(pdf_name: str = Path(..., description="N
         
         logger.info(f"Processing {len(top_maintenance_chunks)} chunks for maintenance schedule generation")
         
-        # Generate maintenance schedule using LLM with enhanced prompt
-        logger.info("Generating maintenance schedule with LLM...")
-        maintenance_tasks_data = await llm_service.generate_maintenance_schedule(top_maintenance_chunks)
+        # Process chunks in batches of 4
+        all_maintenance_tasks = []
+        chunk_batches = [top_maintenance_chunks[i:i+4] for i in range(0, len(top_maintenance_chunks), 4)]
+        
+        logger.info(f"Processing {len(chunk_batches)} batches of 4 chunks each")
+        
+        for batch_num, chunk_batch in enumerate(chunk_batches, 1):
+            logger.info(f"Processing batch {batch_num}/{len(chunk_batches)} with {len(chunk_batch)} chunks")
+            
+            # Generate maintenance schedule for this batch
+            batch_tasks = await llm_service.generate_maintenance_schedule(chunk_batch)
+            
+            if batch_tasks:
+                all_maintenance_tasks.extend(batch_tasks)
+                logger.info(f"Batch {batch_num} generated {len(batch_tasks)} tasks")
+            else:
+                logger.warning(f"Batch {batch_num} generated no tasks")
+        
+        maintenance_tasks_data = all_maintenance_tasks
         
         # Log the generated tasks for debugging
         logger.info(f"Generated {len(maintenance_tasks_data)} maintenance tasks")

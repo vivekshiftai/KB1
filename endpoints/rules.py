@@ -44,49 +44,37 @@ async def generate_rules(pdf_name: str = Path(..., description="Name of the PDF 
         
         # Define IoT/monitoring-related keywords for smart filtering
         iot_keywords = [
-            "temperature", "pressure", "vibration", "speed", "flow", "level", "voltage", "current",
-            "monitor", "sensor", "threshold", "limit", "alarm", "alert", "warning", "critical",
-            "measurement", "reading", "value", "range", "maximum", "minimum", "normal", "abnormal",
-            "performance", "efficiency", "output", "input", "signal", "data", "status", "condition",
-            "operational", "functional", "working", "running", "stopped", "error", "fault", "failure"
+            "temperature pressure vibration speed", "monitor sensor threshold limit", 
+            "alarm alert warning critical", "measurement reading value range"
         ]
         
-        # Query for IoT/monitoring-relevant chunks using keywords
-        iot_chunks = []
-        for keyword in iot_keywords[:4]:  # Use top 4 keywords for 20 total chunks
-            try:
-                keyword_chunks = await vector_db.query_chunks(
-                    collection_name=collection_name,
-                    query=keyword,
-                    top_k=5  # Fetch 5 chunks per keyword (20 total)
-                )
-                iot_chunks.extend(keyword_chunks)
-                logger.info(f"Found {len(keyword_chunks)} chunks for keyword: {keyword}")
-            except Exception as e:
-                logger.warning(f"Error querying for keyword '{keyword}': {str(e)}")
-                continue
+        # Create combined query from all keywords
+        combined_query = " ".join(iot_keywords)
+        logger.info(f"Searching with combined query: {combined_query}")
         
-        # Remove duplicates and get top 20 most relevant chunks
-        unique_chunks = []
-        seen_chunks = set()
-        for chunk in iot_chunks:
-            chunk_id = chunk.get("metadata", {}).get("chunk_index", "")
-            if chunk_id not in seen_chunks:
-                unique_chunks.append(chunk)
-                seen_chunks.add(chunk_id)
+        # Query for IoT/monitoring-relevant chunks using combined keywords
+        try:
+            iot_chunks = await vector_db.query_chunks(
+                collection_name=collection_name,
+                query=combined_query,
+                top_k=12  # Fetch top 12 chunks in single query
+            )
+            logger.info(f"Found {len(iot_chunks)} chunks for combined IoT query")
+        except Exception as e:
+            logger.warning(f"Error querying with combined keywords: {str(e)}")
+            iot_chunks = []
         
-        # Sort by relevance (lower distance = higher relevance) and take top 20
-        unique_chunks.sort(key=lambda x: x.get("distance", 1.0))
-        top_iot_chunks = unique_chunks[:20]
+        # Take top 12 chunks (no deduplication needed since single query)
+        top_iot_chunks = iot_chunks[:12]
         
-        logger.info(f"Found {len(top_iot_chunks)} unique IoT/monitoring-relevant chunks out of {len(iot_chunks)} total chunks")
+        logger.info(f"Selected {len(top_iot_chunks)} IoT/monitoring-relevant chunks from single query")
         
         if not top_iot_chunks:
             logger.warning("No IoT/monitoring-relevant chunks found, falling back to general chunks")
             # Fallback to general chunks if no IoT-specific content found
             top_iot_chunks = await vector_db.get_all_chunks(
                 collection_name=collection_name,
-                limit=10
+                limit=12
             )
         
         if not top_iot_chunks:
@@ -97,9 +85,25 @@ async def generate_rules(pdf_name: str = Path(..., description="Name of the PDF 
         
         logger.info(f"Processing {len(top_iot_chunks)} chunks for rule generation")
         
-        # Generate rules using LLM with enhanced prompt
-        logger.info("Generating rules with LLM...")
-        rules_data = await llm_service.generate_rules(top_iot_chunks)
+        # Process chunks in batches of 4
+        all_rules = []
+        chunk_batches = [top_iot_chunks[i:i+4] for i in range(0, len(top_iot_chunks), 4)]
+        
+        logger.info(f"Processing {len(chunk_batches)} batches of 4 chunks each")
+        
+        for batch_num, chunk_batch in enumerate(chunk_batches, 1):
+            logger.info(f"Processing batch {batch_num}/{len(chunk_batches)} with {len(chunk_batch)} chunks")
+            
+            # Generate rules for this batch
+            batch_rules = await llm_service.generate_rules(chunk_batch)
+            
+            if batch_rules:
+                all_rules.extend(batch_rules)
+                logger.info(f"Batch {batch_num} generated {len(batch_rules)} rules")
+            else:
+                logger.warning(f"Batch {batch_num} generated no rules")
+        
+        rules_data = all_rules
         
         processing_time = calculate_processing_time(start_time)
         

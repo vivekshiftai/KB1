@@ -17,15 +17,15 @@ class Settings(BaseSettings):
     
     # Model Configuration for Different Use Cases
     # Maintenance Generation Model
-    maintenance_model_name: str = "Llama-4-Maverick-17B-128E-Instruct-FP8"
+    maintenance_model_name: str = "o3-mini"
     maintenance_model_endpoint: Optional[str] = "https://chgai.services.ai.azure.com/models"
     
     # Rules Generation Model
-    rules_model_name: str = "Llama-4-Maverick-17B-128E-Instruct-FP8"
+    rules_model_name: str = "o3-mini"
     rules_model_endpoint: Optional[str] = "https://chgai.services.ai.azure.com/models"
     
     # Safety Generation Model
-    safety_model_name: str = "Llama-4-Maverick-17B-128E-Instruct-FP8"
+    safety_model_name: str = "o3-mini"
     safety_model_endpoint: Optional[str] = "https://chgai.services.ai.azure.com/models"
     
     # Query Processing Model

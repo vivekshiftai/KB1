@@ -44,45 +44,37 @@ async def generate_safety_information(pdf_name: str = Path(..., description="Nam
         
         # Define safety-specific keywords for smart filtering
         safety_keywords = [
-            "error codes", "precaution", "alert", "safety"
+            "error codes precaution alert safety", "warning danger hazard risk", 
+            "emergency stop prohibited caution", "protection equipment procedure"
         ]
         
-        # Query for safety-relevant chunks using keywords
-        safety_chunks = []
-        for keyword in safety_keywords:  # Use all 4 safety keywords
-            try:
-                keyword_chunks = await vector_db.query_chunks(
-                    collection_name=collection_name,
-                    query=keyword,
-                    top_k=5  # Fetch 5 chunks per keyword (20 total)
-                )
-                safety_chunks.extend(keyword_chunks)
-                logger.info(f"Found {len(keyword_chunks)} chunks for keyword: {keyword}")
-            except Exception as e:
-                logger.warning(f"Error querying for keyword '{keyword}': {str(e)}")
-                continue
+        # Create combined query from all keywords
+        combined_query = " ".join(safety_keywords)
+        logger.info(f"Searching with combined query: {combined_query}")
         
-        # Remove duplicates and get top 15 chunks
-        unique_chunks = []
-        seen_chunks = set()
-        for chunk in safety_chunks:
-            chunk_id = chunk.get("metadata", {}).get("chunk_index", "")
-            if chunk_id not in seen_chunks:
-                unique_chunks.append(chunk)
-                seen_chunks.add(chunk_id)
+        # Query for safety-relevant chunks using combined keywords
+        try:
+            safety_chunks = await vector_db.query_chunks(
+                collection_name=collection_name,
+                query=combined_query,
+                top_k=12  # Fetch top 12 chunks in single query
+            )
+            logger.info(f"Found {len(safety_chunks)} chunks for combined safety query")
+        except Exception as e:
+            logger.warning(f"Error querying with combined keywords: {str(e)}")
+            safety_chunks = []
         
-        # Sort by relevance (lower distance = higher relevance) and take top 15
-        unique_chunks.sort(key=lambda x: x.get("distance", 1.0))
-        top_safety_chunks = unique_chunks[:15]
+        # Take top 12 chunks (no deduplication needed since single query)
+        top_safety_chunks = safety_chunks[:12]
         
-        logger.info(f"Found {len(top_safety_chunks)} unique safety-relevant chunks out of {len(safety_chunks)} total chunks")
+        logger.info(f"Selected {len(top_safety_chunks)} safety-relevant chunks from single query")
         
         if not top_safety_chunks:
             logger.warning("No safety-relevant chunks found, falling back to general chunks")
             # Fallback to general chunks if no safety-specific content found
             top_safety_chunks = await vector_db.get_all_chunks(
                 collection_name=collection_name,
-                limit=15
+                limit=12
             )
         
         if not top_safety_chunks:
@@ -93,9 +85,32 @@ async def generate_safety_information(pdf_name: str = Path(..., description="Nam
         
         logger.info(f"Processing {len(top_safety_chunks)} chunks for safety information generation")
         
-        # Generate safety information using LLM with enhanced prompt
-        logger.info("Generating safety information with LLM...")
-        safety_data = await llm_service.generate_safety_information(top_safety_chunks)
+        # Process chunks in batches of 4
+        all_safety_data = {"safety_precautions": [], "safety_information": []}
+        chunk_batches = [top_safety_chunks[i:i+4] for i in range(0, len(top_safety_chunks), 4)]
+        
+        logger.info(f"Processing {len(chunk_batches)} batches of 4 chunks each")
+        
+        for batch_num, chunk_batch in enumerate(chunk_batches, 1):
+            logger.info(f"Processing batch {batch_num}/{len(chunk_batches)} with {len(chunk_batch)} chunks")
+            
+            # Generate safety information for this batch
+            batch_safety = await llm_service.generate_safety_information(chunk_batch)
+            
+            if batch_safety:
+                # Merge safety data from this batch
+                if "safety_precautions" in batch_safety:
+                    all_safety_data["safety_precautions"].extend(batch_safety["safety_precautions"])
+                if "safety_information" in batch_safety:
+                    all_safety_data["safety_information"].extend(batch_safety["safety_information"])
+                
+                batch_precautions = len(batch_safety.get("safety_precautions", []))
+                batch_info = len(batch_safety.get("safety_information", []))
+                logger.info(f"Batch {batch_num} generated {batch_precautions} precautions and {batch_info} info items")
+            else:
+                logger.warning(f"Batch {batch_num} generated no safety data")
+        
+        safety_data = all_safety_data
         
         processing_time = calculate_processing_time(start_time)
         
