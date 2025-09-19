@@ -175,7 +175,7 @@ class LLMService:
 
         self.max_tokens = 8192
 
-        self.max_completion_tokens = 1500
+        self.max_completion_tokens = 4096
 
         self.max_context_tokens = self.max_tokens - self.max_completion_tokens
 
@@ -218,29 +218,29 @@ class LLMService:
             logger.info(f"Using default client with API version {self.api_version} for model {model_name}")
             return self.client
     
-    async def _make_api_call(self, client, model_name: str, system_prompt: str, user_prompt: str, max_tokens=None, temperature=0.0):
+    async def _make_api_call(self, client, model_name: str, system_prompt: str, user_prompt: str, max_tokens=None, temperature=0.1):
         """Make API call with appropriate format based on client type"""
         if model_name == "o3-mini":
-            # Use OpenAI client format
+            # Use OpenAI client format - o3-mini doesn't support temperature or other parameters
             response = client.chat.completions.create(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
                 max_completion_tokens=100000 if max_tokens is None else max_tokens,
-                model=settings.o3_deployment_name,
-                temperature=temperature
+                model=settings.o3_deployment_name
+                # Note: o3-mini only supports messages, max_completion_tokens, and model parameters
             )
             return response.choices[0].message.content.strip()
         else:
-            # Use Azure AI Inference client format
+            # Use Azure AI Inference client format with temperature=0.1
             response = client.complete(
                 messages=[
                     SystemMessage(content=system_prompt),
                     UserMessage(content=user_prompt)
                 ],
                 max_tokens=max_tokens or self.max_completion_tokens,
-                temperature=temperature,
+                temperature=0.1,  # Set to 0.1 for other models
                 top_p=0.1,
                 presence_penalty=0.0,
                 frequency_penalty=0.0,
@@ -985,7 +985,7 @@ Respond with JSON:
 
                     max_tokens=1000,
 
-                    temperature=0.0,
+                    temperature=0.1,
 
                     top_p=0.1,
 
@@ -1801,7 +1801,7 @@ Quality and formatting requirements:
 
                     max_tokens=self.max_completion_tokens,
 
-                    temperature=0.0,
+                    temperature=0.1,
 
                     top_p=0.1,
 
@@ -2228,7 +2228,7 @@ Respond with JSON:
 
                     max_tokens=1000,
 
-                    temperature=0.0,
+                    temperature=0.1,
 
                     top_p=0.1,
 
@@ -2762,7 +2762,7 @@ Provide the JSON object with the rules array."""
 
                     max_tokens=self.max_completion_tokens,
 
-                    temperature=0.0,
+                    temperature=0.1,
 
                     top_p=0.1,
 
@@ -3077,7 +3077,7 @@ Provide the JSON object with safety_precautions and safety_information arrays.""
 
                     max_tokens=self.max_completion_tokens,
 
-                    temperature=0.0,
+                    temperature=0.1,
 
                     top_p=0.1,
 
@@ -3783,7 +3783,7 @@ Provide the JSON object with the maintenance_tasks array."""
                     system_prompt, 
                     user_prompt, 
                     max_tokens, 
-                    temperature=0.0
+                    temperature=0.1
                 )
                 
                 logger.info(f"Used max_tokens={max_tokens} for maintenance model {model_config['name']}")
