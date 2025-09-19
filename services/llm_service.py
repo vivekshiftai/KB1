@@ -218,20 +218,162 @@ class LLMService:
             logger.info(f"Using default client with API version {self.api_version} for model {model_name}")
             return self.client
     
+    def _count_tokens(self, text: str) -> int:
+        """Count tokens in text using tiktoken"""
+        try:
+            return len(self.encoding.encode(text))
+        except Exception as e:
+            logger.warning(f"Error counting tokens: {e}")
+            # Fallback: rough estimate (1 token ≈ 4 characters)
+            return len(text) // 4
+    
+    def _split_content_by_tokens(self, content: str, max_tokens: int) -> list[str]:
+        """Split content into chunks that fit within token limits"""
+        try:
+            # Split content by double newlines (paragraph breaks)
+            paragraphs = content.split('\n\n')
+            
+            chunks = []
+            current_chunk = ""
+            current_tokens = 0
+            
+            for paragraph in paragraphs:
+                paragraph_tokens = self._count_tokens(paragraph)
+                
+                # If adding this paragraph would exceed the limit, start a new chunk
+                if current_tokens + paragraph_tokens > max_tokens and current_chunk:
+                    chunks.append(current_chunk.strip())
+                    current_chunk = paragraph
+                    current_tokens = paragraph_tokens
+                else:
+                    if current_chunk:
+                        current_chunk += "\n\n" + paragraph
+                    else:
+                        current_chunk = paragraph
+                    current_tokens += paragraph_tokens
+            
+            # Add the last chunk if it has content
+            if current_chunk.strip():
+                chunks.append(current_chunk.strip())
+            
+            logger.info(f"Split content into {len(chunks)} chunks, token counts: {[self._count_tokens(chunk) for chunk in chunks]}")
+            return chunks
+            
+        except Exception as e:
+            logger.error(f"Error splitting content: {e}")
+            return [content]  # Return original content if splitting fails
+    
+    def _combine_json_responses(self, responses: list[str], model_name: str) -> str:
+        """Combine multiple JSON responses into a single response"""
+        try:
+            import json
+            
+            combined_data = {}
+            
+            # Determine the expected structure based on model type
+            if "maintenance" in model_name.lower():
+                combined_data = {"maintenance_tasks": []}
+            elif "rules" in model_name.lower():
+                combined_data = {"rules": []}
+            elif "safety" in model_name.lower():
+                combined_data = {"safety_precautions": [], "safety_information": []}
+            
+            # Parse and combine each response
+            for i, response in enumerate(responses):
+                try:
+                    # Clean response to extract JSON
+                    cleaned_response = response
+                    if "```json" in cleaned_response:
+                        cleaned_response = cleaned_response.split("```json")[1].split("```")[0]
+                    elif "```" in cleaned_response:
+                        # Try to extract JSON from code blocks
+                        parts = cleaned_response.split("```")
+                        for part in parts:
+                            if "{" in part and "}" in part:
+                                cleaned_response = part
+                                break
+                    
+                    parsed = json.loads(cleaned_response.strip())
+                    
+                    # Merge based on response type
+                    if "maintenance_tasks" in parsed:
+                        combined_data["maintenance_tasks"].extend(parsed["maintenance_tasks"])
+                    elif "rules" in parsed:
+                        combined_data["rules"].extend(parsed["rules"])
+                    elif "safety_precautions" in parsed or "safety_information" in parsed:
+                        if "safety_precautions" in parsed:
+                            combined_data["safety_precautions"].extend(parsed["safety_precautions"])
+                        if "safety_information" in parsed:
+                            combined_data["safety_information"].extend(parsed["safety_information"])
+                    
+                    logger.info(f"Successfully parsed and merged response chunk {i+1}")
+                    
+                except Exception as e:
+                    logger.warning(f"Could not parse response chunk {i+1} as JSON: {e}")
+                    # If JSON parsing fails, treat as text response
+                    continue
+            
+            # Return combined JSON
+            return json.dumps(combined_data, indent=2)
+            
+        except Exception as e:
+            logger.error(f"Error combining JSON responses: {e}")
+            # Fallback: return first response or concatenated text
+            return responses[0] if responses else ""
+    
     async def _make_api_call(self, client, model_name: str, system_prompt: str, user_prompt: str, max_tokens=None, temperature=0.1):
         """Make API call with appropriate format based on client type"""
         if model_name == "o3-mini":
-            # Use OpenAI client format - o3-mini doesn't support temperature or other parameters
-            response = client.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                max_completion_tokens=100000 if max_tokens is None else max_tokens,
-                model=settings.o3_deployment_name
-                # Note: o3-mini only supports messages, max_completion_tokens, and model parameters
-            )
-            return response.choices[0].message.content.strip()
+            # Check token limits for o3-mini (200,000 total context)
+            system_tokens = self._count_tokens(system_prompt)
+            user_tokens = self._count_tokens(user_prompt)
+            completion_tokens = 50000 if max_tokens is None else (max_tokens or 50000)  # Reduced from 100k
+            
+            total_tokens = system_tokens + user_tokens + completion_tokens
+            max_context = 200000  # o3-mini context limit
+            
+            logger.info(f"Token usage: system={system_tokens}, user={user_tokens}, completion={completion_tokens}, total={total_tokens}")
+            
+            if total_tokens > max_context:
+                # Need to split the user prompt
+                available_tokens = max_context - system_tokens - completion_tokens
+                logger.warning(f"Content too large ({total_tokens} tokens), splitting user prompt to fit {available_tokens} tokens")
+                
+                # Split user prompt into smaller chunks
+                content_chunks = self._split_content_by_tokens(user_prompt, available_tokens)
+                
+                # Process each chunk and combine results
+                all_responses = []
+                for i, chunk in enumerate(content_chunks):
+                    logger.info(f"Processing content chunk {i+1}/{len(content_chunks)}")
+                    
+                    response = client.chat.completions.create(
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": chunk}
+                        ],
+                        max_completion_tokens=completion_tokens,
+                        model=settings.o3_deployment_name
+                    )
+                    
+                    chunk_response = response.choices[0].message.content.strip()
+                    all_responses.append(chunk_response)
+                
+                # Combine all responses - try to merge JSON if possible
+                combined_response = self._combine_json_responses(all_responses, model_name)
+                logger.info(f"Combined {len(all_responses)} chunk responses into final response")
+                return combined_response
+            else:
+                # Content fits in context, make single call
+                response = client.chat.completions.create(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    max_completion_tokens=completion_tokens,
+                    model=settings.o3_deployment_name
+                )
+                return response.choices[0].message.content.strip()
         else:
             # Use Azure AI Inference client format with temperature=0.1
             response = client.complete(
