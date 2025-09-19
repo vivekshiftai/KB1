@@ -728,10 +728,10 @@ Please examine these images carefully and use them to:
 - Provide visual context for procedures and instructions
 - Reference specific visual elements when explaining steps
 - Enhance your answer with details visible in the images
-- IMPORTANT: When referencing images, use natural language first, then add the image marker on the next line
-- Format: "Turn the main switch as shown in image 1\\n[IMAGE:image 1.jpg]"
-- Format: "Check the control panel refer to image 2\\n[IMAGE:image 2.jpg]" 
-- Format: "Position the dough see image 3\\n[IMAGE:image 3.jpg]"
+- IMPORTANT: When referencing images, use "below image" phrasing since the image appears below the text
+- Format: "Turn the main switch as shown in below image\\n[IMAGE:image 1.jpg]"
+- Format: "Check the control panel refer to below image\\n[IMAGE:image 2.jpg]" 
+- Format: "Position the dough see below image\\n[IMAGE:image 3.jpg]"
 - Always put the image marker on a separate line immediately after the reference
 
 Image embedding guidelines:
@@ -789,14 +789,14 @@ Response formatting:
 
 Respond in JSON format:
 {{
-    "response": "**Main Topic**\\n\\nI. **High Level Section**\\n1. First step with details as shown in image 1\\n[IMAGE:image 1.jpg]\\n2. Second step with details refer to image 2\\n[IMAGE:image 2.jpg]\\n\\nII. **Another High Level Section**\\n1. Check the control panel see image 3\\n[IMAGE:image 3.jpg]\\n• Sub-detail\\n• Another sub-detail",
+    "response": "**Main Topic**\\n\\nI. **High Level Section**\\n1. First step with details as shown in below image\\n[IMAGE:image 1.jpg]\\n2. Second step with details refer to below image\\n[IMAGE:image 2.jpg]\\n\\nII. **Another High Level Section**\\n1. Check the control panel see below image\\n[IMAGE:image 3.jpg]\\n• Sub-detail\\n• Another sub-detail",
     "chunks_used": ["section headings you referenced"],
     "suggested_images": ["image 1", "image 2", "image 3"]
 }}
 
 Important: 
 - Use **bold** for headings with Roman numerals for major sections, numbered steps for procedures
-- Keep natural language references like "as shown in image 1" in the text
+- Use "below image" phrasing since images appear below the text reference
 - Add [IMAGE:image X.jpg] markers on the next line after each reference
 - The suggested_images field should list the images you referenced in the response text
 - Never include "Suggested Images" or "Chunks Used" sections in your response text"""
@@ -829,12 +829,12 @@ Available images: {", ".join(numbered_image_list)}
 Important: These images contain crucial visual information. Please:
 - Examine each image to understand what it shows (controls, screens, equipment, procedures)
 - Incorporate visual details into your answer where relevant
-- CRITICAL: Use natural language references first, then add image markers on the next line
-- Format: "Turn the power switch as shown in image 1\\n[IMAGE:image 1.jpg]"
-- Format: "Check the control panel refer to image 2\\n[IMAGE:image 2.jpg]"
+- CRITICAL: Use "below image" references since the image appears below the text
+- Format: "Turn the power switch as shown in below image\\n[IMAGE:image 1.jpg]"
+- Format: "Check the control panel refer to below image\\n[IMAGE:image 2.jpg]"
 
 Image embedding rules:
-- Keep natural language: "as shown in image X", "refer to image X", "see image X"
+- Keep natural language: "as shown in below image", "refer to below image", "see below image"
 - Add [IMAGE:image X.jpg] marker on the next line after each reference
 - The suggested_images field should list all images you referenced in the response
 - Avoid suggesting error code tables, warning symbols, or emergency indicators unless the query is about errors or safety
