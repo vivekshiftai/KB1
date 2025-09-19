@@ -10,6 +10,7 @@ sentence-transformers
 # AI/ML dependencies
 azure-ai-inference
 azure-core
+openai
 torch
 transformers
 tiktoken

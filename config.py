@@ -15,18 +15,22 @@ class Settings(BaseSettings):
     azure_openai_key: str
     azure_openai_endpoint: Optional[str] = "https://chgai.services.ai.azure.com/models"
     
+    # O3-mini specific configuration
+    o3_azure_endpoint: Optional[str] = "https://chgai.cognitiveservices.azure.com/"
+    o3_deployment_name: str = "o3-mini"
+    
     # Model Configuration for Different Use Cases
     # Maintenance Generation Model
     maintenance_model_name: str = "o3-mini"
-    maintenance_model_endpoint: Optional[str] = "https://chgai.services.ai.azure.com/models"
+    maintenance_model_endpoint: Optional[str] = "https://chgai.cognitiveservices.azure.com/"
     
     # Rules Generation Model
     rules_model_name: str = "o3-mini"
-    rules_model_endpoint: Optional[str] = "https://chgai.services.ai.azure.com/models"
+    rules_model_endpoint: Optional[str] = "https://chgai.cognitiveservices.azure.com/"
     
     # Safety Generation Model
     safety_model_name: str = "o3-mini"
-    safety_model_endpoint: Optional[str] = "https://chgai.services.ai.azure.com/models"
+    safety_model_endpoint: Optional[str] = "https://chgai.cognitiveservices.azure.com/"
     
     # Query Processing Model
     query_model_name: str = "gpt-4o"

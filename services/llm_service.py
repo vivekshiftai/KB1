@@ -36,6 +36,8 @@ from azure.ai.inference.models import SystemMessage, UserMessage
 
 from azure.core.credentials import AzureKeyCredential
 
+from openai import AzureOpenAI
+
 from config import settings
 
 from utils.image_processor import ImageProcessor
@@ -150,11 +152,11 @@ class LLMService:
             )
 
             
-            # Initialize o3-mini specific client
-            self.o3_client = ChatCompletionsClient(
-                endpoint=self.endpoint,
-                credential=AzureKeyCredential(settings.azure_openai_key),
-                api_version=self.o3_api_version
+            # Initialize o3-mini specific client using OpenAI library
+            self.o3_client = AzureOpenAI(
+                api_version=self.o3_api_version,
+                azure_endpoint=settings.o3_azure_endpoint,
+                api_key=settings.azure_openai_key,
             )
             
             logger.info("Azure AI clients initialized successfully")
@@ -213,8 +215,38 @@ class LLMService:
             logger.info(f"Using o3-mini client with API version {self.o3_api_version}")
             return self.o3_client
         else:
-            logger.info(f"Using default client with API version {self.api_version}")
+            logger.info(f"Using default client with API version {self.api_version} for model {model_name}")
             return self.client
+    
+    async def _make_api_call(self, client, model_name: str, system_prompt: str, user_prompt: str, max_tokens=None, temperature=0.0):
+        """Make API call with appropriate format based on client type"""
+        if model_name == "o3-mini":
+            # Use OpenAI client format
+            response = client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                max_completion_tokens=100000 if max_tokens is None else max_tokens,
+                model=settings.o3_deployment_name,
+                temperature=temperature
+            )
+            return response.choices[0].message.content.strip()
+        else:
+            # Use Azure AI Inference client format
+            response = client.complete(
+                messages=[
+                    SystemMessage(content=system_prompt),
+                    UserMessage(content=user_prompt)
+                ],
+                max_tokens=max_tokens or self.max_completion_tokens,
+                temperature=temperature,
+                top_p=0.1,
+                presence_penalty=0.0,
+                frequency_penalty=0.0,
+                model=model_name
+            )
+            return response.choices[0].message.content.strip()
     
     def _get_request_lock(self, model_name: str) -> threading.Lock:
 
@@ -953,7 +985,7 @@ Respond with JSON:
 
                     max_tokens=1000,
 
-                    temperature=0.1,
+                    temperature=0.0,
 
                     top_p=0.1,
 
@@ -1769,7 +1801,7 @@ Quality and formatting requirements:
 
                     max_tokens=self.max_completion_tokens,
 
-                    temperature=0.1,
+                    temperature=0.0,
 
                     top_p=0.1,
 
@@ -2196,7 +2228,7 @@ Respond with JSON:
 
                     max_tokens=1000,
 
-                    temperature=0.1,
+                    temperature=0.0,
 
                     top_p=0.1,
 
@@ -2730,7 +2762,7 @@ Provide the JSON object with the rules array."""
 
                     max_tokens=self.max_completion_tokens,
 
-                    temperature=0.2,
+                    temperature=0.0,
 
                     top_p=0.1,
 
@@ -3048,7 +3080,7 @@ Provide the JSON object with safety_precautions and safety_information arrays.""
 
                     max_tokens=self.max_completion_tokens,
 
-                    temperature=0.2,
+                    temperature=0.0,
 
                     top_p=0.1,
 
@@ -3745,8 +3777,8 @@ Provide the JSON object with the maintenance_tasks array."""
 
             async with self._api_semaphore:
 
-                # Use maximum tokens for o3-mini model, limited tokens for others
-                max_tokens = None if model_config["name"] == "o3-mini" else self.max_completion_tokens
+                # Use maximum tokens for generation models, limited tokens for others
+                max_tokens = None if model_config["name"] in ["o3-mini", "gpt-4o-mini"] else self.max_completion_tokens
                 
                 response = client.complete(
                     messages=[
@@ -3758,7 +3790,7 @@ Provide the JSON object with the maintenance_tasks array."""
                     ],
 
                     max_tokens=max_tokens,
-                    temperature=0.2,
+                    temperature=0.0,
 
                     top_p=0.1,
 
