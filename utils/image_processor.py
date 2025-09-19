@@ -26,9 +26,9 @@ class ImageProcessor:
     """Utility class for image processing operations"""
     
     def __init__(self):
-        self.default_font_size = 100  # Doubled to 100px for maximum visibility
-        self.label_padding = 20  # Increased padding for larger text
-        self.label_height = 140  # Increased height to accommodate 100px text
+        self.default_font_size = 28   # Adjusted to fit in 40px label height
+        self.label_padding = 5   # Minimal padding for compact label
+        self.label_height = 40  # Compact label height
         self.background_color = (255, 255, 255)  # White background
         self.text_color = (0, 0, 0)  # Black text
         
@@ -111,9 +111,9 @@ class ImageProcessor:
                 text_height = bbox[3] - bbox[1]
                 logger.info(f"📏 Text dimensions: '{label_text}' = {text_width}x{text_height}px with {self.default_font_size}px font")
             else:
-                # Fallback for default font - estimates for 100px text
-                text_width = len(label_text) * 50  # Estimate for 100px text
-                text_height = 80  # Height estimate for 100px text
+                 # Fallback for default font - estimates for 28px text
+                 text_width = len(label_text) * 15  # Estimate for 28px text
+                 text_height = 22  # Height estimate for 28px text
             
             text_x = (original_width - text_width) // 2
             text_y = original_height + (self.label_height - text_height) // 2

@@ -766,11 +766,15 @@ Please decide:
                 logger.info(f"❌ No images referenced in response text - returning empty list")
                 images = []
             
+            # LLM now generates image markers directly, no need for post-processing
+            response_text = state["llm_response"].get("response", "")
+            logger.info("📝 LLM response contains direct image markers - no post-processing needed")
+            
             # Create final response with dynamic processing information
             final_response = QueryResponse(
                 success=True,
                 message="Query processed successfully with dynamic information gathering",
-                response=state["llm_response"].get("response", ""),
+                response=response_text,  # Use original response text with LLM-generated markers
                 chunks_used=state["llm_response"].get("chunks_used", []),
                 images=images,
                 tables=tables,

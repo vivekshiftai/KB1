@@ -229,16 +229,22 @@ class LLMService:
             return response_text
 
     def _extract_images_from_response_text(self, response_text: str, image_reference_mapping: Dict[str, str]) -> List[str]:
-        """Extract only images that are actually referenced in the response text"""
+        """Extract only images that are actually referenced in the response text (now with [IMAGE:] markers)"""
         try:
             import re
             
-            # Find all image references in the response text (e.g., "image 1", "image 2")
-            image_references = re.findall(r'\bimage\s+(\d+)\b', response_text, re.IGNORECASE)
+            # Find all image markers in the response text (e.g., "[IMAGE:image 1.jpg]", "[IMAGE:image 2.jpg]")
+            image_markers = re.findall(r'\[IMAGE:image\s+(\d+)\.jpg\]', response_text, re.IGNORECASE)
+            
+            # Also find plain image references for backward compatibility
+            plain_references = re.findall(r'\bimage\s+(\d+)\b', response_text, re.IGNORECASE)
+            
+            # Combine both types of references
+            all_image_numbers = set(image_markers + plain_references)
             
             # Convert to the expected format and validate against mapping
             images_actually_used = []
-            for img_num in image_references:
+            for img_num in all_image_numbers:
                 img_reference = f"image {img_num}"
                 if img_reference in image_reference_mapping:
                     if img_reference not in images_actually_used:  # Avoid duplicates
@@ -249,6 +255,7 @@ class LLMService:
             
             logger.info(f"🎯 STRICT FILTERING: Found {len(images_actually_used)} images referenced in response text")
             logger.info(f"Images actually referenced: {images_actually_used}")
+            logger.info(f"Image markers found: {len(image_markers)}, Plain references found: {len(plain_references)}")
             
             return images_actually_used
             
@@ -721,14 +728,18 @@ Please examine these images carefully and use them to:
 - Provide visual context for procedures and instructions
 - Reference specific visual elements when explaining steps
 - Enhance your answer with details visible in the images
-- Use natural references like "as shown in image 1", "refer to image 2", "see image 3"
+- IMPORTANT: When referencing images, embed them directly in your response using the format [IMAGE:image X.jpg]
+- Replace "as shown in image 1" with "as shown in [IMAGE:image 1.jpg]"
+- Replace "refer to image 2" with "refer to [IMAGE:image 2.jpg]"
+- Replace "see image 3" with "see [IMAGE:image 3.jpg]"
+- You can place image markers anywhere in the text where they make sense contextually
 
 Image selection guidelines:
-- Suggest images that show actual procedures, controls, or equipment relevant to the question
-- Avoid suggesting error code charts, warning symbols, emergency indicators, safety signs, or alert symbols unless specifically asked about errors or safety
-- Do not suggest images of prohibited activity signs, hazard symbols, or emergency stop indicators for operational questions
-- Focus on procedural images that help users complete the specific task (control panels, buttons, screens, equipment)
-- Be highly selective - only suggest images that directly support completing the user's specific task
+- Embed image markers directly in your response text where they are most relevant
+- Use the format [IMAGE:image X.jpg] where X is the image number
+- Place images contextually: "Check the power switch [IMAGE:image 1.jpg]" or "The control panel [IMAGE:image 2.jpg] shows..."
+- Focus on procedural images that help users complete the specific task
+- Be highly selective - only embed images that directly support the explanation
 - For safety information or error codes, provide the details in text rather than suggesting warning symbol images"""
         
         # Add query analysis information if available
@@ -778,12 +789,16 @@ Response formatting:
 
 Respond in JSON format:
 {{
-    "response": "**Main Topic**\\n\\nI. **High Level Section**\\n1. First step with details\\n2. Second step with details\\n\\nII. **Another High Level Section**\\n1. First step\\n• Sub-detail\\n• Another sub-detail",
+    "response": "**Main Topic**\\n\\nI. **High Level Section**\\n1. First step with details [IMAGE:image 1.jpg]\\n2. Second step with details [IMAGE:image 2.jpg]\\n\\nII. **Another High Level Section**\\n1. Check the control panel [IMAGE:image 3.jpg]\\n• Sub-detail\\n• Another sub-detail",
     "chunks_used": ["section headings you referenced"],
-    "suggested_images": ["image 1", "image 2"]
+    "suggested_images": ["image 1", "image 2", "image 3"]
 }}
 
-Important: Use **bold** for headings with Roman numerals for major sections, numbered steps for procedures. Never include "Suggested Images" or "Chunks Used" sections in your response text."""
+Important: 
+- Use **bold** for headings with Roman numerals for major sections, numbered steps for procedures
+- Embed [IMAGE:image X.jpg] markers directly in your response text where images are most relevant
+- The suggested_images field should list the images you embedded in the response text
+- Never include "Suggested Images" or "Chunks Used" sections in your response text"""
         
         # Add query analysis guidance if available
         analysis_guidance = ""
@@ -813,11 +828,14 @@ Available images: {", ".join(numbered_image_list)}
 Important: These images contain crucial visual information. Please:
 - Examine each image to understand what it shows (controls, screens, equipment, procedures)
 - Incorporate visual details into your answer where relevant
-- Reference images naturally (e.g., "as shown in image 1", "refer to image 2", "see the control panel in image 3")
-- Use the images to provide more specific and actionable guidance
+- CRITICAL: Embed images directly using [IMAGE:image X.jpg] markers in your response text
+- Place image markers contextually where they make most sense in the flow
+- Example: "Turn the power switch [IMAGE:image 1.jpg] to the ON position"
 
-Image suggestion rules:
-- In the suggested_images field, include ONLY images that directly help answer this specific question
+Image embedding rules:
+- Use [IMAGE:image X.jpg] format where X is the image number
+- Embed images inline with the text where they are most relevant
+- The suggested_images field should list all images you embedded in the response
 - Avoid suggesting error code tables, warning symbols, or emergency indicators unless the query is about errors or safety
 - Focus on images showing procedures, controls, or equipment relevant to the user's task
 - Be highly selective - suggest only images that provide practical value for this specific query
